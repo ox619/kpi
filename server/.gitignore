@@ -2,3 +2,5 @@ db/
 exports/
 backups/
 tmp/
+*.exe
+dootask-kpi-server
