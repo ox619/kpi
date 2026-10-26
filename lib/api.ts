@@ -2,7 +2,58 @@ import axios from "axios"
 import { storage } from "./storage"
 
 // 获取API基础URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api"
+// 1. 显式配置优先（Docker/生产环境通过 NEXT_PUBLIC_API_URL 注入）
+// 2. 未配置时按当前访问地址推算——内网其他机器访问时不能用 localhost
+//    （否则请求会打到访问者自己的电脑上）
+// 3. SSR 兜底 localhost
+const resolveApiBaseUrl = (): string => {
+  const configured = process.env.NEXT_PUBLIC_API_URL
+  if (configured) {
+    return configured
+  }
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    const protocol = window.location.protocol === "https:" ? "http:" : window.location.protocol
+    return `${protocol}//${window.location.hostname}:8080/api`
+  }
+  return "http://localhost:8080/api"
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
+
+// 从任意错误对象中提取可读的错误信息（避免把 AxiosError 对象直接渲染到界面上）
+export const getErrorMessage = (error: unknown, fallback = "请求失败，请稍后重试"): string => {
+  if (error == null) {
+    return fallback
+  }
+  if (typeof error === "string") {
+    return error
+  }
+  if (typeof error === "object") {
+    const err = error as {
+      message?: string
+      code?: string
+      response?: { data?: { error?: string; message?: string } }
+    }
+    const responseData = err.response?.data
+    if (responseData?.error) {
+      return responseData.error
+    }
+    if (responseData?.message) {
+      return responseData.message
+    }
+    if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
+      return "无法连接后端服务，请确认后端已启动，且当前设备能访问该服务端口"
+    }
+    if (err.code === "ECONNABORTED" || err.message?.includes("timeout")) {
+      return "请求超时，请稍后重试"
+    }
+    if (err.message) {
+      return err.message
+    }
+    return fallback
+  }
+  return fallback
+}
 
 // 创建axios实例
 const api = axios.create({

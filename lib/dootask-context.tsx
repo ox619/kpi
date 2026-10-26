@@ -3,7 +3,7 @@
 import { isMicroApp, DooTaskUserInfo, getUserInfo, getSafeArea, isMainElectron as isMainElectronTool, setCapsuleConfig } from "@dootask/tools"
 import { createContext, useContext, useEffect } from "react"
 import { useState } from "react"
-import { authApi, settingsApi } from "./api"
+import { authApi, getErrorMessage, settingsApi } from "./api"
 
 interface DootaskContextType {
   loading: boolean
@@ -94,7 +94,7 @@ export function DootaskProvider({ children }: { children: React.ReactNode }) {
         setDooTaskUser(dooTaskUser)
         setIsDootask(true)
       } catch (error) {
-        setError(error as string)
+        setError(getErrorMessage(error, "系统初始化失败"))
       } finally {
         setLoading(false)
       }

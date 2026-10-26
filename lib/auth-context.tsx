@@ -40,14 +40,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const savedUser = authApi.getUser()
 
         if (token && savedUser) {
-          setUser(savedUser)
-          // 验证token是否仍然有效
+          // 先验证token有效性，验证通过后再设置用户状态
+          // 避免在token已过期时短暂进入"已登录"状态，从而带着过期token发起请求（401 / SSE连接失败）
           try {
             const response = await authApi.getCurrentUser()
             setUser(response.data)
             authApi.setAuth(token, response.data)
           } catch {
-            // Token无效，清除本地存储
+            // Token无效或已过期，清除本地存储
             authApi.logout()
             setUser(null)
           }

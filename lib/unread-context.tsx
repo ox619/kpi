@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useState, ReactNode, useContext, useEffect, useMemo } from "react"
+import axios from "axios"
 import { useAuth } from "./auth-context"
 import { useNotification } from "./notification-context"
 import { evaluationApi, invitationApi } from "./api"
@@ -19,7 +20,7 @@ interface UnreadContextType {
 const UnreadContext = createContext<UnreadContextType | undefined>(undefined)
 
 export function UnreadProvider({ children }: { children: ReactNode }) {
-  const { userId } = useAuth()
+  const { userId, loading: authLoading } = useAuth()
   const { onMessage } = useNotification()
   const [unreadEvaluations, setUnreadEvaluations] = useState(0)
   const [unreadInvitations, setUnreadInvitations] = useState(0)
@@ -28,38 +29,44 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const refreshUnreadEvaluations = useMemo(
     () =>
       debounce(async () => {
-        if (userId) {
-          try {
-            const response = await evaluationApi.getPendingCount()
-            setUnreadEvaluations(response.count)
-          } catch (error) {
+        // 认证尚未完成时不要发请求，避免带着无效/过期token请求导致401
+        if (authLoading || !userId) {
+          setUnreadEvaluations(0)
+          return
+        }
+        try {
+          const response = await evaluationApi.getPendingCount()
+          setUnreadEvaluations(response.count)
+        } catch (error) {
+          // token失效时静默处理（由认证流程负责跳转登录），避免控制台噪音
+          if (!(axios.isAxiosError(error) && error.response?.status === 401)) {
             console.error("获取待确认评估数量失败:", error)
-            setUnreadEvaluations(0)
           }
-        } else {
           setUnreadEvaluations(0)
         }
       }, 500),
-    [userId]
+    [userId, authLoading]
   )
 
   // 待确认邀请数量
   const refreshUnreadInvitations = useMemo(
     () =>
       debounce(async () => {
-        if (userId) {
-          try {
-            const response = await invitationApi.getPendingCount()
-            setUnreadInvitations(response.count)
-          } catch (error) {
+        if (authLoading || !userId) {
+          setUnreadInvitations(0)
+          return
+        }
+        try {
+          const response = await invitationApi.getPendingCount()
+          setUnreadInvitations(response.count)
+        } catch (error) {
+          if (!(axios.isAxiosError(error) && error.response?.status === 401)) {
             console.error("获取待确认邀请数量失败:", error)
-            setUnreadInvitations(0)
           }
-        } else {
           setUnreadInvitations(0)
         }
       }, 500),
-    [userId]
+    [userId, authLoading]
   )
 
   // 监听实时通知消息

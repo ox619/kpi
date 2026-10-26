@@ -156,6 +156,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         setIsConnecting(false)
 
         if (eventSource.readyState === EventSource.CLOSED) {
+          // token已被清除（如登录已失效/已退出登录）时不再重连，避免无限401重试
+          if (!storage.getItem("auth_token")) {
+            logger.info("未登录或登录已失效，停止SSE重连")
+            setIsConnecting(false)
+            return
+          }
+
           logger.info("SSE连接已关闭，尝试重连...")
 
           // 自动重连
