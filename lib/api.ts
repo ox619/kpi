@@ -87,7 +87,22 @@ export interface KPIItem {
   description: string
   max_score: number
   order: number
+  scored_by?: string // 评分角色: manager(主管独评) / hr(HR独评) / both(都评，默认)
   created_at: string
+}
+
+// 评分角色：主管独评 / HR独评 / 都评（按绩效规则加权）
+export type ItemScoredBy = "manager" | "hr" | "both"
+
+export const scoredByLabel = (scoredBy?: string): string => {
+  switch (scoredBy) {
+    case "manager":
+      return "主管评"
+    case "hr":
+      return "HR评"
+    default:
+      return "都评"
+  }
 }
 
 export interface KPIEvaluation {

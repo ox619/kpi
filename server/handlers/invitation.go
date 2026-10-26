@@ -75,10 +75,22 @@ func CreateInvitation(c *gin.Context) {
 		}
 	}
 
-	// 获取评估的KPI项目
+	// 获取评估的KPI项目（邀请评分只作用于"都评"项）
 	var items []models.KPIItem
 	if err := models.DB.Where("template_id = ?", evaluation.TemplateID).Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评估项目失败"})
+		return
+	}
+
+	// 过滤出参与邀请评分的项目（主管独评项/HR独评项不参与邀请加权）
+	var invitedItems []models.KPIItem
+	for _, item := range items {
+		if item.ScoredBy == "" || item.ScoredBy == "both" {
+			invitedItems = append(invitedItems, item)
+		}
+	}
+	if len(invitedItems) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前考核模板没有「都评」项，无法发起邀请评分（主管独评项与HR独评项不参与邀请评分）"})
 		return
 	}
 
@@ -116,8 +128,8 @@ func CreateInvitation(c *gin.Context) {
 			return
 		}
 
-		// 为每个KPI项目创建评分记录
-		for _, item := range items {
+		// 为每个参与邀请评分的KPI项目创建评分记录
+		for _, item := range invitedItems {
 			invitedScore := models.InvitedScore{
 				InvitationID: invitation.ID,
 				ItemID:       item.ID,

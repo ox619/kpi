@@ -88,12 +88,12 @@ const buildPayloadAndValidate = (form: PerformanceRuleForm): ValidationResult =>
   }
 
   const noInvitation = {
-    self_weight: parseValue("无邀请评分 - 自评", form.no_invitation.self_weight),
+    self_weight: 0, // 员工自评环节已取消，自评权重固定为0
     superior_weight: parseValue("无邀请评分 - 上级评分", form.no_invitation.superior_weight),
   }
 
   const employee = {
-    self_weight: parseValue("有邀请评分（员工）- 自评", form.with_invitation.employee.self_weight),
+    self_weight: 0, // 员工自评环节已取消，自评权重固定为0
     invite_superior_weight: parseValue("有邀请评分（员工）- 邀请评分", form.with_invitation.employee.invite_superior_weight),
     superior_weight: parseValue("有邀请评分（员工）- 上级评分", form.with_invitation.employee.superior_weight),
   }
@@ -101,11 +101,11 @@ const buildPayloadAndValidate = (form: PerformanceRuleForm): ValidationResult =>
   const sums = [
     {
       label: "无邀请评分",
-      value: noInvitation.self_weight + noInvitation.superior_weight,
+      value: noInvitation.superior_weight,
     },
     {
       label: "有邀请评分（员工）",
-      value: employee.self_weight + employee.invite_superior_weight + employee.superior_weight,
+      value: employee.invite_superior_weight + employee.superior_weight,
     },
   ]
 
@@ -182,10 +182,9 @@ export default function PerformanceRulesPage() {
 
   const totals = useMemo(
     () => ({
-      noInvitation:
-        parseForTotal(formData.no_invitation.self_weight) + parseForTotal(formData.no_invitation.superior_weight),
+      // 自评环节已取消，自评权重不计入合计
+      noInvitation: parseForTotal(formData.no_invitation.superior_weight),
       employee:
-        parseForTotal(formData.with_invitation.employee.self_weight) +
         parseForTotal(formData.with_invitation.employee.invite_superior_weight) +
         parseForTotal(formData.with_invitation.employee.superior_weight),
     }),
@@ -273,7 +272,7 @@ export default function PerformanceRulesPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">绩效规则配置</h1>
           <p className="text-muted-foreground mt-1 sm:mt-2">
-            设置不同场景下自评、上级及邀请评分的权重比例
+            设置不同场景下上级及邀请评分的权重比例
           </p>
         </div>
         <Button type="button" className="w-full sm:w-auto lg:mt-8" onClick={fetchRule} disabled={isBusy}>
@@ -287,6 +286,7 @@ export default function PerformanceRulesPage() {
         <AlertTitle>使用说明</AlertTitle>
         <AlertDescription>
           <p>请根据公司制度调整各场景下的权重百分比，并确保每个场景的合计为100%。保存后立即生效。</p>
+          <p>注：员工自评环节已取消，自评权重不再参与计算（历史配置中的自评权重将被忽略）。</p>
         </AlertDescription>
       </Alert>
 
@@ -347,12 +347,6 @@ export default function PerformanceRulesPage() {
               <CardContent>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <WeightInput
-                    label="自评"
-                    value={formData.no_invitation.self_weight}
-                    onChange={handleNoInvitationChange("self_weight")}
-                    disabled={isBusy}
-                  />
-                  <WeightInput
                     label="上级评分"
                     value={formData.no_invitation.superior_weight}
                     onChange={handleNoInvitationChange("superior_weight")}
@@ -369,12 +363,6 @@ export default function PerformanceRulesPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 lg:grid-cols-3 sm:grid-cols-2">
-                  <WeightInput
-                    label="自评"
-                    value={formData.with_invitation.employee.self_weight}
-                    onChange={handleEmployeeChange("self_weight")}
-                    disabled={isBusy}
-                  />
                   <WeightInput
                     label="邀请评分"
                     value={formData.with_invitation.employee.invite_superior_weight}

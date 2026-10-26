@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Edit, Trash2, ClipboardList, Settings, Eye } from "lucide-react"
-import { templateApi, itemApi, type KPITemplate, type KPIItem } from "@/lib/api"
+import { templateApi, itemApi, type KPITemplate, type KPIItem, scoredByLabel } from "@/lib/api"
 import { useAppContext } from "@/lib/app-context"
 import { getPeriodLabel, formatScore } from "@/lib/utils"
 import { LoadingInline } from "@/components/loading"
@@ -29,6 +29,7 @@ const defaultItemFormData = {
   description: "",
   max_score: 0,
   order: 1,
+  scored_by: "both",
 }
 
 export default function TemplatesPage() {
@@ -175,6 +176,7 @@ export default function TemplatesPage() {
       description: item.description,
       max_score: item.max_score,
       order: item.order,
+      scored_by: item.scored_by || "both",
     })
     setItemDialogOpen(true)
   }
@@ -379,6 +381,27 @@ export default function TemplatesPage() {
                           </div>
                         </div>
                         <div className="flex flex-col gap-2">
+                          <Label htmlFor="item-scored-by">评分角色</Label>
+                          <Select
+                            value={itemFormData.scored_by}
+                            onValueChange={value => setItemFormData({ ...itemFormData, scored_by: value })}
+                          >
+                            <SelectTrigger id="item-scored-by">
+                              <SelectValue placeholder="选择评分角色" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="both">都评（主管+HR，按绩效规则加权）</SelectItem>
+                              <SelectItem value="manager">主管独评（主管评分占100%）</SelectItem>
+                              <SelectItem value="hr">HR独评（HR评分占100%）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <div className="text-sm text-muted-foreground">
+                            <p>1、都评：主管评分与HR评分按绩效规则加权计算，可参与邀请评分；</p>
+                            <p>2、主管独评：主管评分直接作为该项最终分，HR仅可查看；</p>
+                            <p>3、HR独评：由HR在审核阶段人工评分，评分即为最终分。</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
                           <Label htmlFor="order">排序</Label>
                           <Input
                             id="order"
@@ -425,6 +448,7 @@ export default function TemplatesPage() {
                         <TableHead>排序</TableHead>
                         <TableHead>项目名称</TableHead>
                         <TableHead>描述</TableHead>
+                        <TableHead>评分角色</TableHead>
                         <TableHead>满分</TableHead>
                         <TableHead className="text-right">操作</TableHead>
                       </TableRow>
@@ -440,6 +464,20 @@ export default function TemplatesPage() {
                             <pre className="whitespace-pre-wrap break-words text-sm text-muted-foreground line-clamp-5">
                               {item.description}
                             </pre>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.scored_by === "manager"
+                                  ? "text-blue-600 border-blue-400"
+                                  : item.scored_by === "hr"
+                                    ? "text-purple-600 border-purple-400"
+                                    : "text-gray-600 border-gray-400"
+                              }
+                            >
+                              {scoredByLabel(item.scored_by)}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">{formatScore(item.max_score)}分</Badge>

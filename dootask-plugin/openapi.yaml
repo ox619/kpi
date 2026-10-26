@@ -1277,6 +1277,7 @@ components:
         description: { type: string }
         max_score: { type: number }
         order: { type: integer }
+        scored_by: { type: string, enum: [manager, hr, both], description: 评分角色。manager=主管独评(主管分占100%)，hr=HR独评(HR分占100%)，both=都评(按绩效规则加权)。默认 both }
 
     EvaluationInput:
       type: object

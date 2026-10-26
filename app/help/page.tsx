@@ -355,8 +355,8 @@ export default function HelpPage() {
               <h5 className="font-medium text-sm mb-2">📋 考核任务</h5>
               <ul className="text-sm text-muted-foreground space-y-1 ml-4">
                 <li>• 查看分配给自己的考核任务</li>
-                <li>• 填写自评内容</li>
-                <li>• 提交考核表单</li>
+                <li>• 查看考核进度与反馈</li>
+                <li>• 确认最终考核结果</li>
               </ul>
             </div>
             
@@ -426,39 +426,32 @@ export default function HelpPage() {
               <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">1</div>
               <div>
                 <h5 className="font-medium text-sm">创建考核</h5>
-                <p className="text-sm text-muted-foreground">HR 或主管创建考核任务，选择模板和被考核人员</p>
+                <p className="text-sm text-muted-foreground">HR 或主管创建考核任务，选择模板和被考核人员（被考核人员须有直属上级）</p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">2</div>
-              <div>
-                <h5 className="font-medium text-sm">员工自评</h5>
-                <p className="text-sm text-muted-foreground">员工填写自我评价，对各项指标进行评分</p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">3</div>
               <div>
                 <h5 className="font-medium text-sm">主管评估</h5>
                 <p className="text-sm text-muted-foreground">主管对员工进行评估，给出评分和反馈</p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
-              <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">4</div>
+              <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">3</div>
               <div>
                 <h5 className="font-medium text-sm">邀请评分（可选）</h5>
-                <p className="text-sm text-muted-foreground">HR可邀请其他人员对员工进行评分，获取多方面评价</p>
+                <p className="text-sm text-muted-foreground">HR可邀请其他人员对员工进行评分（仅作用于&quot;都评&quot;项），获取多方面评价</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">4</div>
+              <div>
+                <h5 className="font-medium text-sm">HR审核</h5>
+                <p className="text-sm text-muted-foreground">HR审核评估结果，为&quot;HR独评项&quot;评分，确认最终评分</p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">5</div>
-              <div>
-                <h5 className="font-medium text-sm">HR审核</h5>
-                <p className="text-sm text-muted-foreground">HR审核评估结果，确认最终评分</p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">6</div>
               <div>
                 <h5 className="font-medium text-sm">员工确认</h5>
                 <p className="text-sm text-muted-foreground">员工确认最终得分，考核流程完成</p>
@@ -478,6 +471,7 @@ export default function HelpPage() {
                 <li>• 填写考核基本信息：考核周期（月度/季度/年度）、年份</li>
                 <li>• 选择考核模板（从 KPI 模板中选择）</li>
                 <li>• 选择被考核人员（可单选或批量选择）</li>
+                <li>• 注意：被考核人员必须已配置直属上级，否则无法创建考核</li>
                 <li>• 保存并发布考核任务</li>
               </ul>
             </div>
@@ -508,8 +502,8 @@ export default function HelpPage() {
               <h5 className="font-medium text-sm mb-2">HR审核</h5>
               <ul className="text-sm text-muted-foreground space-y-1 ml-4">
                 <li>• 查看主管评估完成的考核</li>
+                <li>• 为&quot;HR独评项&quot;评分（主管独评项由主管评分直接作为最终分，仅可查看）</li>
                 <li>• 审核评分的合理性和公平性</li>
-                <li>• 必要时可以调整评分</li>
                 <li>• 完成审核后提交给员工确认</li>
               </ul>
             </div>
@@ -525,8 +519,7 @@ export default function HelpPage() {
               <ul className="text-sm text-muted-foreground space-y-1 ml-4">
                 <li>• 在&quot;考核管理&quot;中查看需要评估的员工</li>
                 <li>• 点击&quot;查看&quot;按钮进入考核详情页面</li>
-                <li>• 查看员工的自评内容和评分</li>
-                <li>• 对各项指标进行客观评分（可以与自评分不同）</li>
+                <li>• 对需要主管评分的项目进行客观评分</li>
                 <li>• 填写评估意见和改进建议</li>
                 <li>• 完成所有项目评分后提交评估结果</li>
               </ul>
@@ -549,14 +542,11 @@ export default function HelpPage() {
           <h4 className="font-semibold mb-3">👤 员工操作指南</h4>
           <div className="space-y-4">
             <div>
-              <h5 className="font-medium text-sm mb-2">填写自评</h5>
+              <h5 className="font-medium text-sm mb-2">查看考核进度</h5>
               <ul className="text-sm text-muted-foreground space-y-1 ml-4">
                 <li>• 在&quot;考核管理&quot;中查看分配给自己的考核任务</li>
-                <li>• 点击&quot;查看&quot;按钮进入自评页面</li>
-                <li>• 认真阅读各项 KPI 指标和要求</li>
-                <li>• 如实填写工作成果和自我评分</li>
-                <li>• 在自评说明中提供具体的工作案例和数据支撑</li>
-                <li>• 完成所有项目评分后提交自评</li>
+                <li>• 点击&quot;查看&quot;按钮进入考核详情页面</li>
+                <li>• 查看主管和HR的评分与反馈（评分由主管和HR完成）</li>
               </ul>
             </div>
             
@@ -613,13 +603,6 @@ export default function HelpPage() {
         <div className="border rounded-lg p-4">
           <h4 className="font-semibold mb-3">📊 考核状态说明</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
-              <div className="flex items-center mb-2">
-                <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                <span className="font-medium text-sm">等待自评</span>
-              </div>
-              <p className="text-xs text-muted-foreground">员工需要填写自我评价</p>
-            </div>
             <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
               <div className="flex items-center mb-2">
                 <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
@@ -689,10 +672,10 @@ export default function HelpPage() {
           <h4 className="font-medium mb-2">💡 考核小贴士</h4>
           <ul className="text-sm text-muted-foreground space-y-1">
             <li>• 考核应该客观公正，基于具体的工作表现</li>
-            <li>• 自评时要诚实，避免过高或过低估计</li>
             <li>• 主管评估时要提供具体的改进建议</li>
-            <li>• 如果员工没有直接主管，自评后会直接进入HR审核</li>
-            <li>• 邀请评分可以提供多角度的评价，帮助形成更全面的考核</li>
+            <li>• 评分项支持三种评分角色：主管独评、HR独评、都评（按绩效规则加权）</li>
+            <li>• 员工没有直属上级时无法创建考核，请先在员工管理中配置直属上级</li>
+            <li>• 邀请评分只作用于&quot;都评&quot;项，可以提供多角度的评价</li>
             <li>• 被邀请评分时要基于客观事实，避免个人偏见</li>
             <li>• 定期回顾考核结果，持续改进工作表现</li>
           </ul>

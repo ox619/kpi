@@ -59,6 +59,7 @@ type KPIItem struct {
 	Description string    `json:"description"`
 	MaxScore    float64   `json:"max_score"` // 满分
 	Order       int       `json:"order"`     // 排序
+	ScoredBy    string    `json:"scored_by" gorm:"default:both"` // 评分角色: manager(主管独评，主管分占100%), hr(HR独评，HR分占100%), both(都评，按绩效规则加权)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
@@ -181,8 +182,8 @@ type PerformanceRule struct {
 
 // 无邀请评分规则
 type PerformanceRuleNoInvitation struct {
-	SelfWeight     float64 `json:"self_weight" gorm:"not null;default:10"`
-	SuperiorWeight float64 `json:"superior_weight" gorm:"not null;default:90"`
+	SelfWeight     float64 `json:"self_weight" gorm:"not null;default:0"` // 自评环节已取消，新库默认为0
+	SuperiorWeight float64 `json:"superior_weight" gorm:"not null;default:100"`
 }
 
 // 有邀请评分规则
@@ -192,24 +193,24 @@ type PerformanceRuleWithInvite struct {
 
 // 员工邀请评分规则
 type PerformanceRuleEmployee struct {
-	SelfWeight           float64 `json:"self_weight" gorm:"not null;default:10"`
+	SelfWeight           float64 `json:"self_weight" gorm:"not null;default:0"` // 自评环节已取消，新库默认为0
 	InviteSuperiorWeight float64 `json:"invite_superior_weight" gorm:"not null;default:30"`
-	SuperiorWeight       float64 `json:"superior_weight" gorm:"not null;default:60"`
+	SuperiorWeight       float64 `json:"superior_weight" gorm:"not null;default:70"`
 }
 
-// DefaultPerformanceRule 返回默认绩效规则配置
+// DefaultPerformanceRule 返回默认绩效规则配置（自评环节已取消，自评权重默认为0）
 func DefaultPerformanceRule() PerformanceRule {
 	return PerformanceRule{
 		Enabled: false,
 		NoInvitation: PerformanceRuleNoInvitation{
-			SelfWeight:     10,
-			SuperiorWeight: 90,
+			SelfWeight:     0,
+			SuperiorWeight: 100,
 		},
 		WithInvitation: PerformanceRuleWithInvite{
 			Employee: PerformanceRuleEmployee{
-				SelfWeight:           10,
+				SelfWeight:           0,
 				InviteSuperiorWeight: 30,
-				SuperiorWeight:       60,
+				SuperiorWeight:       70,
 			},
 		},
 	}

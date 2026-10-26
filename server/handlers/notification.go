@@ -278,7 +278,7 @@ func (n *NotificationService) PersonalizeMessage(userID uint, operatorID uint, e
 func (n *NotificationService) getStatusText(status string) string {
 	switch status {
 	case "pending":
-		return "待自评"
+		return "待主管评估"
 	case "self_evaluated":
 		return "待主管评估"
 	case "manager_evaluated":

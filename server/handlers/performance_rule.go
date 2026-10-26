@@ -58,6 +58,10 @@ func UpdatePerformanceRule(c *gin.Context) {
 		return
 	}
 
+	// 员工自评环节已取消，自评权重强制归零（兼容旧客户端提交的配置）
+	payload.NoInvitation.SelfWeight = 0
+	payload.WithInvitation.Employee.SelfWeight = 0
+
 	if err := validatePerformanceRulePayload(payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -96,6 +100,7 @@ func UpdatePerformanceRule(c *gin.Context) {
 }
 
 func validatePerformanceRulePayload(payload PerformanceRulePayload) error {
+	// 员工自评环节已取消，自评权重不参与校验
 	checks := []struct {
 		label  string
 		values []namedValue
@@ -103,14 +108,12 @@ func validatePerformanceRulePayload(payload PerformanceRulePayload) error {
 		{
 			label: "无邀请评分",
 			values: []namedValue{
-				{name: "自评", value: payload.NoInvitation.SelfWeight},
 				{name: "上级评分", value: payload.NoInvitation.SuperiorWeight},
 			},
 		},
 		{
 			label: "有邀请评分-员工",
 			values: []namedValue{
-				{name: "自评", value: payload.WithInvitation.Employee.SelfWeight},
 				{name: "邀请评分（上级）", value: payload.WithInvitation.Employee.InviteSuperiorWeight},
 				{name: "上级评分", value: payload.WithInvitation.Employee.SuperiorWeight},
 			},

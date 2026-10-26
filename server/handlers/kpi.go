@@ -373,6 +373,21 @@ func CreateEvaluation(c *gin.Context) {
 		return
 	}
 
+	// 校验被考核员工必须有直属上级（去掉员工自评环节后，主管评分是流程的第一步）
+	var employee models.Employee
+	if err := models.DB.Preload("Manager").First(&employee, evaluation.EmployeeID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "被考核员工不存在",
+		})
+		return
+	}
+	if employee.ManagerID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("员工「%s」暂无直属上级，无法创建考核。请先在员工管理中为其配置直属上级。", employee.Name),
+		})
+		return
+	}
+
 	// 开始数据库事务
 	tx := models.DB.Begin()
 
@@ -412,22 +427,22 @@ func CreateEvaluation(c *gin.Context) {
 	// 获取完整的评估信息
 	models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores").First(&evaluation, evaluation.ID)
 
-	// 发送 DooTask 机器人通知：创建考核 -> 员工待自评
-	if evaluation.Employee.DooTaskUserID != nil {
+	// 发送 DooTask 机器人通知：创建考核 -> 上级待评估（已去掉员工自评环节）
+	if employee.Manager != nil && employee.Manager.DooTaskUserID != nil {
 		dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
 		periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
 
 		appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
 
 		message := fmt.Sprintf(
-			"**你有一条新的绩效考核**\n- 考核模板：%s\n- 考核周期：%s\n- 被评估员工：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+			"**你有一条绩效考核待评估**\n- 考核模板：%s\n- 考核周期：%s\n- 部门员工：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
 			evaluation.Template.Name,
 			periodValue,
 			evaluation.Employee.Name,
 			appConfigJSON,
 		)
 
-		_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
+		_ = dooTaskClient.SendBotMessage(employee.Manager.DooTaskUserID, message)
 	}
 
 	// 发送实时通知
@@ -526,9 +541,13 @@ func UpdateEvaluation(c *gin.Context) {
 			if err == nil && allInvitationsCompleted {
 				// 所有邀请都已完成，自动计算HR评分
 				if err := applyPerformanceRuleForEvaluation(evaluation.ID); err == nil {
-					// 如果绩效规则应用成功，自动将状态推进到pending_confirm
-					models.DB.Model(&evaluation).Update("status", "pending_confirm")
-					updateData.Status = "pending_confirm"
+					// 守卫：如果存在未评分的"HR独评项"，HR评分无法自动计算，
+					// 必须停留在manager_evaluated状态等待HR人工审核，否则流程会卡死在待确认阶段
+					if !hasUnscoredHROwnedItems(evaluation.ID) {
+						// 绩效规则应用成功且无需HR人工补分，自动将状态推进到pending_confirm
+						models.DB.Model(&evaluation).Update("status", "pending_confirm")
+						updateData.Status = "pending_confirm"
+					}
 				}
 			}
 			// 如果有未完成的邀请，保持manager_evaluated状态，等待所有邀请完成
@@ -1495,7 +1514,7 @@ func applyPerformanceRuleForEvaluation(evaluationID uint) error {
 	}
 
 	var scores []models.KPIScore
-	if err := models.DB.Where("evaluation_id = ?", evaluationID).Find(&scores).Error; err != nil {
+	if err := models.DB.Preload("Item").Where("evaluation_id = ?", evaluationID).Find(&scores).Error; err != nil {
 		return err
 	}
 	if len(scores) == 0 {
@@ -1525,6 +1544,20 @@ func applyPerformanceRuleForEvaluation(evaluationID uint) error {
 	updatedCount := 0
 
 	for _, score := range scores {
+		// 按评分角色分流：主管独评项直接采用主管评分（占100%），HR独评项跳过（由HR人工审核填写）
+		switch itemScoredBy(score) {
+		case "manager":
+			if score.ManagerScore != nil {
+				totalScore += *score.ManagerScore
+				updatedCount++
+			}
+			continue
+		case "hr":
+			// HR独评项无法自动计算，需HR在审核阶段人工填写
+			continue
+		}
+
+		// 都评项：按绩效规则加权计算HR评分
 		aggregate := invitationAverages[score.ItemID]
 		hrScore, ok := calculateHRScoreByScenario(score, aggregate, scenario, rule)
 		if !ok {
@@ -1600,9 +1633,31 @@ func invitationHasCompletedScore(invitation models.EvaluationInvitation) bool {
 func buildInvitationAverages(invitations []models.EvaluationInvitation) map[uint]invitationAggregate {
 	aggregates := make(map[uint]invitationAggregate)
 
+	// 加载相关评分项，用于判断评分角色（邀请评分只作用于"都评"项）
+	itemIDs := make([]uint, 0)
+	for _, invitation := range invitations {
+		for _, score := range invitation.Scores {
+			itemIDs = append(itemIDs, score.ItemID)
+		}
+	}
+	items := make(map[uint]models.KPIItem)
+	if len(itemIDs) > 0 {
+		var dbItems []models.KPIItem
+		if err := models.DB.Find(&dbItems, itemIDs).Error; err == nil {
+			for _, item := range dbItems {
+				items[item.ID] = item
+			}
+		}
+	}
+
 	for _, invitation := range invitations {
 		for _, score := range invitation.Scores {
 			if score.Score == nil {
+				continue
+			}
+
+			// 主管独评项与HR独评项不参与邀请加权
+			if !itemAllowsInvitation(items[score.ItemID].ScoredBy) {
 				continue
 			}
 
@@ -1654,6 +1709,36 @@ func calculateHRScoreByScenario(score models.KPIScore, aggregate invitationAggre
 
 	result = math.Round(result*100) / 100
 	return result, true
+}
+
+// itemScoredBy 返回评分项的评分角色，历史数据（空值）视为"都评"
+func itemScoredBy(score models.KPIScore) string {
+	switch score.Item.ScoredBy {
+	case "manager", "hr":
+		return score.Item.ScoredBy
+	default:
+		return "both"
+	}
+}
+
+// itemAllowsInvitation 判断评分项是否参与邀请评分加权（仅"都评"项参与）
+func itemAllowsInvitation(scoredBy string) bool {
+	return scoredBy == "" || scoredBy == "both"
+}
+
+// hasUnscoredHROwnedItems 检查考核中是否存在尚未填写HR评分的"HR独评项"
+// 存在时不能自动推进到待确认状态，必须等待HR人工审核补分，否则流程会卡死
+func hasUnscoredHROwnedItems(evaluationID uint) bool {
+	var scores []models.KPIScore
+	if err := models.DB.Preload("Item").Where("evaluation_id = ?", evaluationID).Find(&scores).Error; err != nil {
+		return false
+	}
+	for _, score := range scores {
+		if itemScoredBy(score) == "hr" && score.HRScore == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func valueFromPointer(val *float64) (float64, bool) {

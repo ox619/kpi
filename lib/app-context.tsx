@@ -65,7 +65,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return (
           <Badge variant="outline" className="text-yellow-600 border-yellow-600">
             <Clock className="w-3 h-3 mr-1" />
-            待自评
+            待主管评估
           </Badge>
         )
       case "self_evaluated":

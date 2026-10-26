@@ -51,6 +51,7 @@ import {
   type EvaluationPaginatedResponse,
   type EvaluationStats,
   type PerformanceRule,
+  scoredByLabel,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
@@ -100,7 +101,6 @@ export default function EvaluationsPage() {
   const [scores, setScores] = useState<KPIScore[]>([])
   const [activeTab, setActiveTab] = useState("details")
 
-  const [isSubmittingSelfEvaluation, setIsSubmittingSelfEvaluation] = useState(false)
   const [isSubmittingObjection, setIsSubmittingObjection] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -486,8 +486,8 @@ export default function EvaluationsPage() {
   // 获取项目平均分
   const itemAverageScore = (score: KPIScore) => {
     const scores = itemInvitationScores(score.item_id)
-    const totalScore = (score.manager_score ?? 0) + (score.self_score ?? 0) + scores.reduce((acc, score) => acc + (score.invitationScore.score ?? 0), 0)
-    return formatScore(totalScore / (scores.length + 2))
+    const totalScore = (score.manager_score ?? 0) + scores.reduce((acc, score) => acc + (score.invitationScore.score ?? 0), 0)
+    return formatScore(totalScore / (scores.length + 1))
   }
 
   // 监听实时通知消息
@@ -975,6 +975,17 @@ export default function EvaluationsPage() {
     return { isValid: true }
   }
 
+  // 获取评分项的评分角色（历史数据 scored_by 为空时视为"都评"）
+  const itemScoredBy = (score: KPIScore): string => {
+    switch (score.item?.scored_by) {
+      case "manager":
+      case "hr":
+        return score.item.scored_by
+      default:
+        return "both"
+    }
+  }
+
   // 找到下一个未评分的项目
   const findNextUnscored = (currentScoreId: number, type: "self" | "manager" | "hr"): number | null => {
     const currentIndex = scores.findIndex(s => s.id === currentScoreId)
@@ -1100,29 +1111,12 @@ export default function EvaluationsPage() {
       }
     }
 
-    // 自评阶段的特殊处理
-    if (stage === "self") {
-      // 检查是否所有项目都已自评
-      const uncompletedItems = scores.filter(score => isUnknown(score.self_score))
-      if (uncompletedItems.length > 0) {
-        await Alert("自评", `请先完成所有项目的自评。还有 ${uncompletedItems.length} 个项目未评分。`)
-        scrollToNextUnscored(uncompletedItems[0].id)
-        return
-      }
-
-      // 确认提交自评
-      const result = await Confirm("自评", "确定要提交自评吗？提交后将无法修改。")
-      if (!result) {
-        return
-      }
-
-      setIsSubmittingSelfEvaluation(true)
-    }
-
     // 上级评分阶段的特殊处理
     if (stage === "manager") {
-      // 检查是否所有项目都已进行主管评分
-      const uncompletedItems = scores.filter(score => isUnknown(score.manager_score))
+      // 检查是否所有需要主管评分的项目都已评分（主管独评项 + 都评项；HR独评项由HR在审核阶段填写）
+      const uncompletedItems = scores.filter(
+        score => itemScoredBy(score) !== "hr" && isUnknown(score.manager_score)
+      )
       if (uncompletedItems.length > 0) {
         await Alert("主管评分", `请先完成所有项目的主管评分。还有 ${uncompletedItems.length} 个项目未评分。`)
         scrollToNextUnscored(uncompletedItems[0].id)
@@ -1130,8 +1124,11 @@ export default function EvaluationsPage() {
       }
 
       // 确认提交主管评分
+      const hasHROwnedItems = scores.some(score => itemScoredBy(score) === "hr")
       const confirmMessage = performanceRuleEnabled
-        ? "确定要提交主管评分吗？提交后系统将根据绩效规则自动计算HR评分并进入员工确认阶段。"
+        ? hasHROwnedItems
+          ? "确定要提交主管评分吗？提交后系统将自动计算都评项的HR评分，HR独评项需HR人工审核评分。"
+          : "确定要提交主管评分吗？提交后系统将根据绩效规则自动计算HR评分并进入员工确认阶段。"
         : "确定要提交主管评分吗？提交后将无法修改，评估将进入HR审核阶段。"
       const result = await Confirm("主管评分", confirmMessage)
       if (!result) {
@@ -1141,7 +1138,7 @@ export default function EvaluationsPage() {
 
     // HR审核阶段的特殊处理
     if (stage === "hr") {
-      // 如果启用了绩效规则，检查是否有未完成的邀请评分
+      // 需要HR人工填写的项目：HR独评项（主管独评项已由主管评分直接作为最终分，无需HR处理）
       if (performanceRuleEnabled) {
         const hasPendingInvitations = invitations.some(
           inv => inv.status === "pending" || inv.status === "accepted"
@@ -1153,17 +1150,31 @@ export default function EvaluationsPage() {
           )
           return
         }
-        // 所有邀请都已完成，HR评分已自动计算完成，直接确认即可
+        // HR独评项无法自动计算，必须由HR手动填写
+        const unscoredHROwnedItems = scores.filter(
+          score => itemScoredBy(score) === "hr" && isUnknown(score.hr_score)
+        )
+        if (unscoredHROwnedItems.length > 0) {
+          await Alert("HR审核", `请先完成所有"HR独评项"的评分。还有 ${unscoredHROwnedItems.length} 个项目待HR评分。`)
+          scrollToNextUnscored(unscoredHROwnedItems[0].id)
+          return
+        }
+        // 都评项HR评分已自动计算完成，HR独评项已手动填写完成，直接确认即可
+        const hasHROwnedItems = scores.some(score => itemScoredBy(score) === "hr")
         const result = await Confirm(
           "HR审核",
-          "已启用绩效规则，HR评分已自动计算完成。确定要进入员工确认阶段吗？"
+          hasHROwnedItems
+            ? "HR独评项评分已填写完成，确定要进入员工确认阶段吗？"
+            : "已启用绩效规则，HR评分已自动计算完成。确定要进入员工确认阶段吗？"
         )
         if (!result) {
           return
         }
       } else {
-        // 未启用绩效规则，需要HR手动填写所有项目的评分
-        const unconfirmedItems = scores.filter(score => isUnknown(score.hr_score))
+        // 未启用绩效规则，需要HR手动确认所有非主管独评项的评分
+        const unconfirmedItems = scores.filter(
+          score => itemScoredBy(score) !== "manager" && isUnknown(score.hr_score)
+        )
         if (unconfirmedItems.length > 0) {
           await Alert("HR审核", `请先确认所有项目的最终得分。还有 ${unconfirmedItems.length} 个项目待确认。`)
           scrollToNextUnscored(unconfirmedItems[0].id)
@@ -1196,9 +1207,6 @@ export default function EvaluationsPage() {
     try {
       let newStatus = ""
       switch (stage) {
-        case "self":
-          newStatus = "self_evaluated"
-          break
         case "manager":
           newStatus = "manager_evaluated"
           break
@@ -1213,13 +1221,12 @@ export default function EvaluationsPage() {
       // 计算并更新总分
       let totalScore = 0
       switch (stage) {
-        case "self":
-          // 自评完成后，总分为自评分数总和
-          totalScore = scores.reduce((acc, score) => acc + (score.self_score || 0), 0)
-          break
         case "manager":
-          // 主管评分完成后，总分为主管评分总和
-          totalScore = scores.reduce((acc, score) => acc + (score.manager_score || 0), 0)
+          // 主管评分完成后，总分为需主管评分项目（主管独评项+都评项）的主管评分总和
+          totalScore = scores.reduce(
+            (acc, score) => acc + (itemScoredBy(score) !== "hr" ? score.manager_score || 0 : 0),
+            0
+          )
           break
         case "hr":
           // HR审核后，总分为最终得分总和
@@ -1257,7 +1264,7 @@ export default function EvaluationsPage() {
         setScores(scores =>
           scores.map(s => ({
             ...s,
-            final_score: s.hr_score ?? s.manager_score ?? s.self_score,
+            final_score: s.hr_score ?? s.manager_score,
           }))
         )
       }
@@ -1281,17 +1288,12 @@ export default function EvaluationsPage() {
       }
 
       // 成功提示
-      if (stage === "self") {
-        // 根据最终状态给出相应提示
-        if (finalStatus === "manager_evaluated") {
-          await Alert("自评", "自评提交成功！由于您没有直接主管，评估已自动转入HR审核阶段。")
-        } else {
-          await Alert("自评", "自评提交成功！请等待上级主管评分。")
-        }
-      } else if (stage === "manager") {
-        // 如果启用了绩效规则，状态会自动变为pending_confirm
+      if (stage === "manager") {
+        // 如果启用了绩效规则且无需HR人工补分，状态会自动变为pending_confirm
         if (finalStatus === "pending_confirm" && performanceRuleEnabled) {
           await Alert("主管评分", "主管评分提交成功！系统已根据绩效规则自动计算HR评分，评估已进入员工确认阶段。")
+        } else if (finalStatus === "manager_evaluated" && performanceRuleEnabled) {
+          await Alert("主管评分", "主管评分提交成功！存在HR独评项，评估已转入HR审核阶段，需HR人工评分。")
         } else {
           await Alert("主管评分", "主管评分提交成功！评估已转入HR审核阶段。")
         }
@@ -1304,10 +1306,6 @@ export default function EvaluationsPage() {
       console.error("更新状态失败:", error)
       const errorMessage = getErrorMessage(error, "提交失败，请重试。")
       Alert("提交失败", errorMessage)
-    } finally {
-      if (stage === "self") {
-        setIsSubmittingSelfEvaluation(false)
-      }
     }
   }
 
@@ -1674,10 +1672,10 @@ export default function EvaluationsPage() {
 
     switch (action) {
       case "self":
-        // 任何人都可以对自己的考核进行自评（包括主管）
-        return evaluation.status === "pending" && evaluation.employee_id === currentUser.id
+        // 已取消员工自评环节
+        return false
       case "manager":
-        // 主管只能评估自己直接下属的员工，但不能评估自己
+        // 主管评估现在是流程第一步（status=pending）；self_evaluated 为旧流程数据兼容
         // 特殊情况：如果员工没有上级且是HR角色，HR可以手动推进状态（用于完成邀请评分后的状态推进）
         if (
           evaluation.status === "self_evaluated" &&
@@ -1688,7 +1686,7 @@ export default function EvaluationsPage() {
           return true
         }
         return (
-          evaluation.status === "self_evaluated" &&
+          ["pending", "self_evaluated"].includes(evaluation.status) &&
           (isManager || isHR) &&
           evaluation.employee?.manager_id === currentUser.id &&
           evaluation.employee_id !== currentUser.id
@@ -1712,9 +1710,9 @@ export default function EvaluationsPage() {
         }
         return true
       case "invite":
-        // HR可以邀请员工进行考核（自评完成后即可邀请，无需等待主管评估）
+        // HR可以邀请员工参与评分（仅"都评"项参与邀请加权，自评环节已取消）
         // 被评估员工和被邀请人可以查看邀请评分结果
-        if (["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status)) {
+        if (["manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status)) {
           // HR可以邀请（completed状态时不能创建新邀请，但可以查看）
           if (isHR) return true
           // 被评估员工可以查看自己评估的邀请
@@ -1746,7 +1744,7 @@ export default function EvaluationsPage() {
   // 获取状态流转进度
   const getStatusProgress = (status: string) => {
     const statusMap = {
-      pending: { step: 1, total: 5, label: "等待自评" },
+      pending: { step: 1, total: 5, label: "等待主管评估" },
       self_evaluated: { step: 2, total: 5, label: "等待主管评估" },
       manager_evaluated: { step: 3, total: 5, label: "等待HR审核" },
       pending_confirm: { step: 4, total: 5, label: "等待确认" },
@@ -2060,7 +2058,7 @@ export default function EvaluationsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
-                  <SelectItem value="pending">等待自评</SelectItem>
+                  <SelectItem value="pending">等待主管评估</SelectItem>
                   <SelectItem value="self_evaluated">等待主管评估</SelectItem>
                   <SelectItem value="manager_evaluated">等待HR审核</SelectItem>
                   <SelectItem value="pending_confirm">等待确认</SelectItem>
@@ -2199,7 +2197,7 @@ export default function EvaluationsPage() {
                           (() => {
                             const getStatusLabel = (status: string) => {
                               switch (status) {
-                                case "pending": return "待自评"
+                                case "pending": return "待主管评估"
                                 case "self_evaluated": return "待主管评估"
                                 case "manager_evaluated": return "待HR审核"
                                 case "pending_confirm": return "待确认"
@@ -2342,78 +2340,28 @@ export default function EvaluationsPage() {
                   </TabsList>
 
                   <TabsContent value="details" className="space-y-4" ref={detailsRef}>
-                    {/* 自评指导和进度信息 */}
-                    {canPerformAction(selectedEvaluation, "self") && (
-                      <div className="space-y-4">
-                        <div className="bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                          <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">📝 自评指导</h4>
-                          <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-                            <li>• 请根据本期间的实际工作表现进行客观评分</li>
-                            <li>• 请在评价说明中详细描述您的工作亮点和改进计划</li>
-                            <li>• 完成所有项目评分后，点击&quot;完成自评&quot;提交</li>
-                          </ul>
-                        </div>
-
-                        {/* 评分进度 */}
-                        <div className="bg-green-50/80 dark:bg-green-950/50 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                          <h4 className="font-medium text-green-900 dark:text-green-100 mb-2">📊 评分进度</h4>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-green-800 dark:text-green-200">
-                              已完成 {scores.filter(s => !isUnknown(s.self_score)).length} / {scores.length} 项
-                            </span>
-                            <div className="flex-1 mx-4 bg-green-200 dark:bg-green-800 rounded-full h-2">
-                              <div
-                                className="bg-green-600 dark:bg-green-400 h-2 rounded-full transition-all duration-300"
-                                style={{
-                                  width: `${
-                                    scores.length > 0
-                                      ? (scores.filter(s => !isUnknown(s.self_score)).length / scores.length) *
-                                        100
-                                      : 0
-                                  }%`,
-                                }}
-                              />
-                            </div>
-                            <span className="text-sm font-medium text-green-900 dark:text-green-100">
-                              {scores.length > 0
-                                ? Math.round(
-                                    (scores.filter(s => !isUnknown(s.self_score)).length / scores.length) * 100
-                                  )
-                                : 0}
-                              %
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     {/* 上级评分指导信息 */}
                     {canPerformAction(selectedEvaluation, "manager") && (
                       <div className="space-y-4">
                         <div className="bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
                           <h4 className="font-medium text-purple-900 dark:text-purple-100 mb-2">👔 上级评分指导</h4>
                           <ul className="text-sm text-purple-800 dark:text-purple-200 space-y-1">
-                            <li>• 请结合员工的自评内容和实际工作表现进行评分</li>
+                            <li>• 请根据员工实际工作表现进行客观评分</li>
                             <li>• 评分应客观公正，既要认可成绩，也要指出不足</li>
                             <li>• 在评价说明中提供具体的改进建议和发展方向</li>
                             <li>• 完成所有项目评分后，点击&quot;完成主管评估&quot;提交</li>
                           </ul>
                         </div>
 
-                        {/* 评分对比和进度 */}
+                        {/* 评分进度 */}
                         <div className="bg-orange-50/80 dark:bg-orange-950/50 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
-                          <h4 className="font-medium text-orange-900 dark:text-orange-100 mb-2">📈 评分对比</h4>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-orange-800 dark:text-orange-200">员工自评总分：</span>
-                              <span className="font-semibold text-orange-900 dark:text-orange-100">
-                                {formatScore(scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0))} 分
-                              </span>
-                            </div>
+                          <h4 className="font-medium text-orange-900 dark:text-orange-100 mb-2">📈 评分进度</h4>
+                          <div className="grid grid-cols-1 gap-4 text-sm">
                             <div>
                               <span className="text-orange-800 dark:text-orange-200">主管评分进度：</span>
                               <span className="font-semibold text-orange-900 dark:text-orange-100">
-                                {scores.filter(s => !isUnknown(s.manager_score)).length} / {scores.length} 项
+                                {scores.filter(s => itemScoredBy(s) !== "hr" && !isUnknown(s.manager_score)).length} /{" "}
+                                {scores.filter(s => itemScoredBy(s) !== "hr").length} 项
                               </span>
                             </div>
                           </div>
@@ -2421,13 +2369,13 @@ export default function EvaluationsPage() {
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-xs text-orange-700 dark:text-orange-300">主管评分完成度</span>
                               <span className="text-xs font-medium text-orange-900 dark:text-orange-100">
-                                {scores.length > 0
-                                  ? Math.round(
-                                      (scores.filter(s => !isUnknown(s.manager_score)).length /
-                                        scores.length) *
-                                        100
-                                    )
-                                  : 0}
+                                {(() => {
+                                  const total = scores.filter(s => itemScoredBy(s) !== "hr").length
+                                  const done = scores.filter(
+                                    s => itemScoredBy(s) !== "hr" && !isUnknown(s.manager_score)
+                                  ).length
+                                  return total > 0 ? Math.round((done / total) * 100) : 0
+                                })()}
                                 %
                               </span>
                             </div>
@@ -2436,11 +2384,13 @@ export default function EvaluationsPage() {
                                 className="bg-orange-600 dark:bg-orange-400 h-2 rounded-full transition-all duration-300"
                                 style={{
                                   width: `${
-                                    scores.length > 0
-                                      ? (scores.filter(s => !isUnknown(s.manager_score)).length /
-                                          scores.length) *
-                                        100
-                                      : 0
+                                    (() => {
+                                      const total = scores.filter(s => itemScoredBy(s) !== "hr").length
+                                      const done = scores.filter(
+                                        s => itemScoredBy(s) !== "hr" && !isUnknown(s.manager_score)
+                                      ).length
+                                      return total > 0 ? (done / total) * 100 : 0
+                                    })()
                                   }%`,
                                 }}
                               />
@@ -2457,12 +2407,11 @@ export default function EvaluationsPage() {
                           <h4 className="font-medium text-indigo-900 dark:text-indigo-100 mb-2">🔍 HR审核指导</h4>
                           <ul className="text-sm text-indigo-800 dark:text-indigo-200 space-y-1">
                         {performanceRuleEnabled && (
-                          <li>• 已启用绩效规则，提交审核时系统会自动按配置计算HR评分</li>
+                          <li>• 已启用绩效规则，都评项的HR评分会按配置自动计算</li>
                         )}
-                            <li>• 审核员工自评与上级评分的合理性和一致性</li>
+                            <li>• 主管独评项的主管评分将直接作为最终分，无需调整</li>
+                            <li>• HR独评项需HR人工评分，评分即为该项最终分</li>
                             <li>• 检查评分是否符合公司绩效标准和政策</li>
-                            <li>• 确认最终评分并可进行必要的调整</li>
-                            <li>• 注意：如果员工无直属主管，主管评分会自动填入自评分数</li>
                             <li>• 完成审核后，评估将进入员工确认阶段</li>
                           </ul>
                         </div>
@@ -2472,55 +2421,38 @@ export default function EvaluationsPage() {
                           <h4 className="font-medium text-foreground mb-3">📊 评分汇总分析</h4>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                             <div className="bg-card p-3 rounded border">
-                              <div className="text-muted-foreground">员工自评总分</div>
-                              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                                {scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                平均分：
-                                {scores.length > 0
-                                  ? formatScore(scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0) / scores.length)
-                                  : 0}
-                              </div>
-                            </div>
-                            <div className="bg-card p-3 rounded border">
                               <div className="text-muted-foreground">主管评分总分</div>
                               <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                                {scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0)}
+                                {scores.reduce(
+                                  (acc, score) => acc + (itemScoredBy(score) !== "hr" ? score.manager_score ?? 0 : 0),
+                                  0
+                                )}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                平均分：
-                                {scores.length > 0
-                                  ? formatScore(scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0) / scores.length)
-                                  : 0}
+                                覆盖 {scores.filter(s => itemScoredBy(s) !== "hr").length} 个评分项
                               </div>
                             </div>
                             <div className="bg-card p-3 rounded border">
-                              <div className="text-muted-foreground">评分差异分析</div>
-                              <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                                {formatScore(
-                                  Math.abs(
-                                    scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0) -
-                                      scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0)
-                                  )
+                              <div className="text-muted-foreground">HR评分总分</div>
+                              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                                {scores.reduce(
+                                  (acc, score) => acc + (itemScoredBy(score) !== "manager" ? score.hr_score ?? 0 : 0),
+                                  0
                                 )}
                               </div>
-                              <div className="text-xs text-muted-foreground">自评与主管评分差值</div>
-                            </div>
-                          </div>
-
-                          {/* 差异分析提示 */}
-                          {Math.abs(
-                            scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0) -
-                              scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0)
-                                  ) > 10 && (
-                            <div className="mt-3 p-3 bg-yellow-50/80 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-800 rounded">
-                              <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                                ⚠️ <strong>注意：</strong>
-                                员工自评与主管评分存在较大差异，建议重点关注并在最终评分中做出合理调整。
+                              <div className="text-xs text-muted-foreground">
+                                覆盖 {scores.filter(s => itemScoredBy(s) !== "manager" && !isUnknown(s.hr_score)).length}{" "}
+                                个评分项
                               </div>
                             </div>
-                          )}
+                            <div className="bg-card p-3 rounded border">
+                              <div className="text-muted-foreground">待HR评分项</div>
+                              <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                                {scores.filter(s => itemScoredBy(s) === "hr" && isUnknown(s.hr_score)).length}
+                              </div>
+                              <div className="text-xs text-muted-foreground">HR独评项需人工填写</div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2772,7 +2704,21 @@ export default function EvaluationsPage() {
                             {/* 项目信息 */}
                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                               <div className="flex-1">
-                                <h4 className="font-medium text-lg">{score.item?.name}</h4>
+                                <h4 className="font-medium text-lg flex items-center gap-2">
+                                  {score.item?.name}
+                                  {itemScoredBy(score) !== "both" && (
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        itemScoredBy(score) === "manager"
+                                          ? "text-xs text-blue-600 border-blue-400"
+                                          : "text-xs text-purple-600 border-purple-400"
+                                      }
+                                    >
+                                      {scoredByLabel(score.item?.scored_by)}
+                                    </Badge>
+                                  )}
+                                </h4>
                                 <pre className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
                                   {score.item?.description}
                                 </pre>
@@ -2780,9 +2726,9 @@ export default function EvaluationsPage() {
                               </div>
                               <div className="text-center">
                                 <div className="text-2xl font-bold text-blue-600">
-                                  {isUnknown(score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score)
+                                  {isUnknown(score.final_score ?? score.hr_score ?? score.manager_score)
                                     ? "-"
-                                    : formatScore((score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score) as number)}
+                                    : formatScore((score.final_score ?? score.hr_score ?? score.manager_score) as number)}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   {getScoreLabel(selectedEvaluation.status)}
@@ -2791,97 +2737,13 @@ export default function EvaluationsPage() {
                             </div>
 
                             {/* 评分区域 */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                              {/* 自评区域 */}
-                              <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center h-6">
-                                  自评分数
-                                  {canPerformAction(selectedEvaluation, "self") && (
-                                    <Popover
-                                      open={openPopovers[`${score.id}-self`] || false}
-                                      onOpenChange={open => {
-                                        const popoverKey = `${score.id}-self`
-                                        setOpenPopovers(prev => ({
-                                          ...prev,
-                                          [popoverKey]: open,
-                                        }))
-                                      }}
-                                    >
-                                      <PopoverTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="ml-2 h-6 w-6 p-0">
-                                          <Edit2 className="w-3 h-3" />
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-80" align="start" onOpenAutoFocus={(e) => isTouch ? e.preventDefault() : undefined}>
-                                        <div className="grid gap-4">
-                                          <div className="space-y-2">
-                                            <h4 className="leading-none font-medium">自评编辑</h4>
-                                            <p className="text-muted-foreground text-sm">编辑您的自评分数和评价说明</p>
-                                          </div>
-                                          <div className="grid gap-2">
-                                            <div className="grid grid-cols-3 items-center gap-4">
-                                              <Label htmlFor="self-score">评分</Label>
-                                              <Input
-                                                id="self-score"
-                                                type="number"
-                                                step="0.1"
-                                                defaultValue={score.self_score?.toString() || ""}
-                                                className="col-span-2 h-8"
-                                                placeholder={generateInputPlaceholder(score.item?.max_score ?? 0)}
-                                                onInput={e => scoreInputValidation(e, score.item?.max_score ?? 0)}
-                                              />
-                                            </div>
-                                            <div className="grid grid-cols-3 items-start gap-4">
-                                              <Label htmlFor="self-comment">评价说明</Label>
-                                              <Textarea
-                                                id="self-comment"
-                                                defaultValue={score.self_comment || ""}
-                                                className="col-span-2 min-h-[60px] resize-none"
-                                                placeholder="请输入评价说明..."
-                                              />
-                                            </div>
-                                            <div className="flex justify-end space-x-2 pt-2">
-                                              <Button
-                                                size="sm"
-                                                onClick={() => {
-                                                  const scoreInput = document.getElementById(
-                                                    "self-score"
-                                                  ) as HTMLInputElement
-                                                  const commentInput = document.getElementById(
-                                                    "self-comment"
-                                                  ) as HTMLTextAreaElement
-                                                  handleSaveScoreFromPopover(
-                                                    score.id,
-                                                    "self",
-                                                    scoreInput.value,
-                                                    commentInput.value
-                                                  )
-                                                }}
-                                              >
-                                                <Save className="w-3 h-3 mr-1" />
-                                                保存
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </PopoverContent>
-                                    </Popover>
-                                  )}
-                                </Label>
-
-                                <div>
-                                  <div className="text-sm font-medium">{isUnknown(score.self_score) ? "未评分" : formatScore(score.self_score as number)}</div>
-                                  <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded mt-1">
-                                    {score.self_comment || "暂无说明"}
-                                  </div>
-                                </div>
-                              </div>
-
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                               {/* 主管评分区域 */}
                               <div className="space-y-2">
                                 <Label className="text-sm font-medium flex items-center h-6">
                                   主管评分
-                                  {canPerformAction(selectedEvaluation, "manager") && (
+                                  {itemScoredBy(score) !== "hr" &&
+                                    canPerformAction(selectedEvaluation, "manager") && (
                                     <Popover
                                       open={openPopovers[`${score.id}-manager`] || false}
                                       onOpenChange={open => {
@@ -2925,23 +2787,6 @@ export default function EvaluationsPage() {
                                                 placeholder="请输入评价说明..."
                                               />
                                             </div>
-                                            <div className="grid grid-cols-3 items-center gap-4 text-xs mt-2">
-                                              <div>&nbsp;</div>
-                                              <div className="col-span-2 text-blue-600">
-                                                <div
-                                                  onClick={() => {
-                                                    const scoreInput = document.getElementById(
-                                                      "manager-score"
-                                                    ) as HTMLInputElement
-                                                    scoreInput.value = score.self_score?.toString() || ""
-                                                  }}
-                                                  className="cursor-pointer hover:underline truncate"
-                                                  title="点击采用员工自评分数"
-                                                >
-                                                  员工自评：{formatScore(score.self_score || 0)}分
-                                                </div>
-                                              </div>
-                                            </div>
                                             <div className="flex justify-end space-x-2 pt-2">
                                               <Button
                                                 size="sm"
@@ -2972,6 +2817,12 @@ export default function EvaluationsPage() {
                                 </Label>
 
                                 <div>
+                                  {itemScoredBy(score) === "hr" ? (
+                                    <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+                                      本项为HR独评项，由HR评分
+                                    </div>
+                                  ) : (
+                                    <>
                                   <div className="flex items-center gap-2">
                                     <div className="text-sm font-medium">{isUnknown(score.manager_score) ? "未评分" : formatScore(score.manager_score as number)}</div>
                                     {score.manager_auto && (
@@ -2986,6 +2837,8 @@ export default function EvaluationsPage() {
                                   <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded mt-1">
                                     {score.manager_comment || "暂无说明"}
                                   </div>
+                                    </>
+                                  )}
                                 </div>
                               </div>
 
@@ -2993,7 +2846,8 @@ export default function EvaluationsPage() {
                               <div className="space-y-2">
                                 <Label className="text-sm font-medium flex items-center h-6">
                                   HR评分
-                                  {canPerformAction(selectedEvaluation, "hr") && (
+                                  {itemScoredBy(score) !== "manager" &&
+                                    canPerformAction(selectedEvaluation, "hr") && (
                                     <Popover
                                       open={openPopovers[`${score.id}-hr`] || false}
                                       onOpenChange={open => {
@@ -3040,18 +2894,6 @@ export default function EvaluationsPage() {
                                             <div className="grid grid-cols-3 items-center gap-4 text-xs mt-2">
                                               <div>&nbsp;</div>
                                               <div className="col-span-2 flex flex-col gap-1.5 text-blue-600">
-                                                <div
-                                                  onClick={() => {
-                                                    const scoreInput = document.getElementById(
-                                                      "hr-score"
-                                                    ) as HTMLInputElement
-                                                    scoreInput.value = score.self_score?.toString() || ""
-                                                  }}
-                                                  className="cursor-pointer hover:underline truncate"
-                                                  title="点击采用员工自评分数"
-                                                >
-                                                  员工自评：{formatScore(score.self_score || 0)}分
-                                                </div>
                                                 <div className="flex items-center gap-1">
                                                   <div
                                                     onClick={() => {
@@ -3135,10 +2977,18 @@ export default function EvaluationsPage() {
                                 </Label>
 
                                 <div>
+                                  {itemScoredBy(score) === "manager" ? (
+                                    <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+                                      本项为主管独评项，主管评分即为最终分
+                                    </div>
+                                  ) : (
+                                    <>
                                   <div className="text-sm font-medium">{isUnknown(score.hr_score) ? "未评分" : formatScore(score.hr_score as number)}</div>
                                   <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded mt-1">
                                     {score.hr_comment || "暂无说明"}
                                   </div>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -3161,7 +3011,7 @@ export default function EvaluationsPage() {
                                   : scores.reduce(
                                       (acc, score) =>
                                         acc +
-                                        (score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score ?? 0),
+                                        (score.final_score ?? score.hr_score ?? score.manager_score ?? 0),
                                       0
                                     )
                               )}
@@ -3177,19 +3027,19 @@ export default function EvaluationsPage() {
                               return total + scores.reduce((sum, score) => sum + (score.score ?? 0), 0)
                             }, 0)
                             const hasInvitations = Object.keys(invitationScores).length > 0
-                            const gridCols = hasInvitations ? "grid-cols-5" : "grid-cols-4"
+                            const gridCols = hasInvitations ? "grid-cols-4" : "grid-cols-3"
                             
                             return (
                               <div className={`grid ${gridCols} gap-4 text-center`}>
                                 <div>
                                   <div className="text-lg font-semibold">
-                                    {formatScore(scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0))}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">自评总分</div>
-                                </div>
-                                <div>
-                                  <div className="text-lg font-semibold">
-                                    {formatScore(scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0))}
+                                    {formatScore(
+                                      scores.reduce(
+                                        (acc, score) =>
+                                          acc + (itemScoredBy(score) !== "hr" ? score.manager_score ?? 0 : 0),
+                                        0
+                                      )
+                                    )}
                                   </div>
                                   <div className="text-sm text-muted-foreground">主管评分</div>
                                 </div>
@@ -3513,15 +3363,6 @@ export default function EvaluationsPage() {
               </DialogBody>
 
               <DialogFooter className="flex-col sm:flex-row justify-end gap-2 sm:space-x-2 sm:gap-0">
-                {canPerformAction(selectedEvaluation, "self") && (
-                  <Button
-                    onClick={() => handleCompleteStage(selectedEvaluation.id, "self")}
-                    className="w-full sm:w-auto"
-                    disabled={isSubmittingSelfEvaluation}
-                    >
-                      {isSubmittingSelfEvaluation ? "提交中..." : "完成自评"}
-                    </Button>
-                  )}
                   {canPerformAction(selectedEvaluation, "manager") && (
                     <Button
                       onClick={() => handleCompleteStage(selectedEvaluation.id, "manager")}
