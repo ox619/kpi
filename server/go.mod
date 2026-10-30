@@ -8,6 +8,10 @@ require (
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.2.2
+	// 锁定 v1.7.0：go-workwx v2 目前只有 v2.0.0-alpha.1，官方声明不保证
+	// 相邻 tag 之间的 API 兼容性；升级到 v2 需要 go 1.24+（连带改 Dockerfile）。
+	// 代码侧只需注意 GetAgent→GetAgentInfo、UserIds→UserIDs（本项目未使用）。
+	github.com/xen0n/go-workwx v1.7.0
 	github.com/xuri/excelize/v2 v2.9.1
 	golang.org/x/crypto v0.38.0
 	gorm.io/driver/sqlite v1.5.4
@@ -16,6 +20,7 @@ require (
 
 require (
 	github.com/bytedance/sonic v1.9.1 // indirect
+	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/dootask/tools/server/go v0.0.0-20250717040353-7e9cc89be08c
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
