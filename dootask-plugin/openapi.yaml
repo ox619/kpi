@@ -172,14 +172,13 @@ paths:
     get:
       operationId: getAuthDepartments
       summary: 获取部门列表（注册用，公开）
+      description: |
+        注册页使用，返回全量扁平部门列表（不分页），仅含 id/name/parent_id，
+        不包含员工信息。前端可据此按 parent_id 还原层级。
       tags: [auth]
-      parameters:
-        - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
-        - { name: search, in: query, schema: { type: string } }
       responses:
         '200':
-          description: 部门分页列表
+          description: 部门扁平列表（含 parent_id）
 
   /api/settings:
     get:
@@ -312,6 +311,19 @@ paths:
       responses:
         '201':
           description: 创建成功
+
+  /api/departments/tree:
+    get:
+      operationId: getDepartmentTree
+      summary: 获取部门树（含层级与人数）
+      description: |
+        返回完整组织架构树，与企业微信的部门层级一致。
+        每个节点包含 parent_id、直属在职人数 employee_count，以及含所有子部门的人数 total_employee_count。
+        该接口不分页。
+      tags: [departments]
+      responses:
+        '200':
+          description: 部门树
 
   /api/departments/{id}:
     get:
@@ -1235,6 +1247,9 @@ components:
       properties:
         name: { type: string }
         description: { type: string }
+        parent_id:
+          type: integer
+          description: 上级部门 ID；0 表示顶级部门。不能设置为自身或自身子部门。
 
     EmployeeInput:
       type: object
