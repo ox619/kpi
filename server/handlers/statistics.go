@@ -196,13 +196,14 @@ func GetDepartmentStats(c *gin.Context) {
 		return
 	}
 
-	// 获取员工数量（只统计在职员工）
-	models.DB.Model(&models.Employee{}).Where("department_id = ? AND is_active = ?", departmentId, true).Count(&stats.EmployeeCount)
+	// 获取员工数量（只统计在职员工；含所有子部门）
+	deptIDs := departmentSubtreeIDs(uint(departmentId))
+	models.DB.Model(&models.Employee{}).Where("department_id IN ? AND is_active = ?", deptIDs, true).Count(&stats.EmployeeCount)
 
 	// 获取评估数量和平均分（只统计在职员工）
 	models.DB.Model(&models.KPIEvaluation{}).
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ? AND employees.is_active = ?", departmentId, true).
+		Where("employees.department_id IN ? AND employees.is_active = ?", deptIDs, true).
 		Count(&stats.EvaluationCount)
 
 	var avgResult struct {
@@ -211,7 +212,7 @@ func GetDepartmentStats(c *gin.Context) {
 	models.DB.Model(&models.KPIEvaluation{}).
 		Select("AVG(total_score) as avg_score").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.status = ?", departmentId, true, "completed").
+		Where("employees.department_id IN ? AND employees.is_active = ? AND kpi_evaluations.status = ?", deptIDs, true, "completed").
 		Scan(&avgResult)
 	stats.AverageScore = avgResult.AvgScore
 
@@ -227,7 +228,7 @@ func GetDepartmentStats(c *gin.Context) {
 
 		models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ?", departmentId, true, month+"%").
+			Where("employees.department_id IN ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ?", deptIDs, true, month+"%").
 			Count(&monthStats.EvaluationCount)
 
 		var monthAvg struct {
@@ -236,7 +237,7 @@ func GetDepartmentStats(c *gin.Context) {
 		models.DB.Model(&models.KPIEvaluation{}).
 			Select("AVG(total_score) as avg_score").
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ?", departmentId, true, month+"%", "completed").
+			Where("employees.department_id IN ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ?", deptIDs, true, month+"%", "completed").
 			Scan(&monthAvg)
 
 		stats.MonthlyStats = append(stats.MonthlyStats, struct {
@@ -259,7 +260,7 @@ func GetDepartmentStats(c *gin.Context) {
 	models.DB.Model(&models.KPIEvaluation{}).
 		Select("employee_id, AVG(total_score) as average_score").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.status = ?", departmentId, true, "completed").
+		Where("employees.department_id IN ? AND employees.is_active = ? AND kpi_evaluations.status = ?", deptIDs, true, "completed").
 		Group("employee_id").
 		Order("average_score DESC").
 		Limit(5).
@@ -543,7 +544,7 @@ func ExportDepartmentEvaluations(c *gin.Context) {
 	var evaluations []models.KPIEvaluation
 	result := models.DB.Preload("Employee.Department").Preload("Template").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ?", departmentId).
+		Where("employees.department_id IN ?", departmentSubtreeIDs(uint(departmentId))).
 		Find(&evaluations)
 
 	if result.Error != nil {
@@ -650,14 +651,27 @@ func GetStatisticsData(c *gin.Context) {
 	var departments []models.Department
 	models.DB.Find(&departments)
 
+	// 部门统计口径：含所有子部门；名称使用完整路径，避免不同上级下的同名部门混淆
+	subtreeMap, _ := models.DepartmentSubtreeMap()
+	fullNameMap, _ := models.DepartmentFullNameMap()
+
 	for _, dept := range departments {
 		var stat DepartmentStat
-		stat.Name = dept.Name
+		if fullName, ok := fullNameMap[dept.ID]; ok {
+			stat.Name = fullName
+		} else {
+			stat.Name = dept.Name
+		}
+
+		deptIDs, ok := subtreeMap[dept.ID]
+		if !ok || len(deptIDs) == 0 {
+			deptIDs = []uint{dept.ID}
+		}
 
 		// 总评估数（只统计在职员工）
 		query := models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ? AND employees.is_active = ?", dept.ID, true)
+			Where("employees.department_id IN ? AND employees.is_active = ?", deptIDs, true)
 
 		switch period {
 		case "monthly":

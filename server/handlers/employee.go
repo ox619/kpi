@@ -39,9 +39,9 @@ func GetEmployees(c *gin.Context) {
 			searchPattern, searchPattern, searchPattern)
 	}
 
-	// 添加部门筛选
+	// 添加部门筛选（包含子部门）
 	if departmentID != "" {
-		query = query.Where("department_id = ?", departmentID)
+		query = applyDepartmentSubtreeScope(query, "department_id", departmentID)
 	}
 
 	// 添加角色筛选（支持多个角色，用逗号分隔）
@@ -68,7 +68,7 @@ func GetEmployees(c *gin.Context) {
 			searchPattern, searchPattern, searchPattern)
 	}
 	if departmentID != "" {
-		countQuery = countQuery.Where("department_id = ?", departmentID)
+		countQuery = applyDepartmentSubtreeScope(countQuery, "department_id", departmentID)
 	}
 	if role != "" {
 		if role == "manager,hr" {

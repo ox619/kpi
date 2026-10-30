@@ -175,6 +175,12 @@ func GetEvaluations(c *gin.Context) {
 		pageSize = 10
 	}
 
+	// 部门筛选统一包含子部门（与企业微信的组织层级保持一致）
+	var departmentIDs []uint
+	if departmentID != "" {
+		departmentIDs = departmentSubtreeIDsFromParam(departmentID)
+	}
+
 	// 构建查询
 	query := models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores")
 
@@ -185,12 +191,12 @@ func GetEvaluations(c *gin.Context) {
 	if employeeID != "" {
 		query = query.Where("employee_id = ?", employeeID)
 	}
-	// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+	// 如果同时提供了departmentID和managerID，使用OR关系（本部门及子部门员工 OR 直属下级）
 	if departmentID != "" && managerID != "" {
-		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ? OR manager_id = ?)", departmentID, managerID)
+		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id IN ? OR manager_id = ?)", departmentIDs, managerID)
 	} else {
 		if departmentID != "" {
-			query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+			query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id IN ?)", departmentIDs)
 		}
 		if managerID != "" {
 			query = query.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
@@ -218,12 +224,12 @@ func GetEvaluations(c *gin.Context) {
 		if employeeID != "" {
 			statsQuery = statsQuery.Where("kpi_evaluations.employee_id = ?", employeeID)
 		}
-		// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+		// 如果同时提供了departmentID和managerID，使用OR关系（本部门及子部门员工 OR 直属下级）
 		if departmentID != "" && managerID != "" {
-			statsQuery = statsQuery.Where("(employees.department_id = ? OR employees.manager_id = ?)", departmentID, managerID)
+			statsQuery = statsQuery.Where("(employees.department_id IN ? OR employees.manager_id = ?)", departmentIDs, managerID)
 		} else {
 			if departmentID != "" {
-				statsQuery = statsQuery.Where("employees.department_id = ?", departmentID)
+				statsQuery = statsQuery.Where("employees.department_id IN ?", departmentIDs)
 			}
 			if managerID != "" {
 				statsQuery = statsQuery.Where("employees.manager_id = ?", managerID)
@@ -299,12 +305,12 @@ func GetEvaluations(c *gin.Context) {
 	if employeeID != "" {
 		countQuery = countQuery.Where("employee_id = ?", employeeID)
 	}
-	// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+	// 如果同时提供了departmentID和managerID，使用OR关系（本部门及子部门员工 OR 直属下级）
 	if departmentID != "" && managerID != "" {
-		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ? OR manager_id = ?)", departmentID, managerID)
+		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id IN ? OR manager_id = ?)", departmentIDs, managerID)
 	} else {
 		if departmentID != "" {
-			countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+			countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id IN ?)", departmentIDs)
 		}
 		if managerID != "" {
 			countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
@@ -898,7 +904,7 @@ func GetPendingCountEvaluations(c *gin.Context) {
 		var deptSelfEvaluatedCount int64
 		if err := models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON employees.id = kpi_evaluations.employee_id").
-			Where("employees.department_id = ? AND kpi_evaluations.status = ?", user.DepartmentID, "self_evaluated").
+			Where("employees.department_id IN ? AND kpi_evaluations.status = ?", departmentSubtreeIDs(user.DepartmentID), "self_evaluated").
 			Count(&deptSelfEvaluatedCount).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
 			return
@@ -920,7 +926,7 @@ func GetPendingCountEvaluations(c *gin.Context) {
 		var deptSelfEvaluatedCount int64
 		if err := models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON employees.id = kpi_evaluations.employee_id").
-			Where("employees.department_id = ? AND kpi_evaluations.status = ?", user.DepartmentID, "self_evaluated").
+			Where("employees.department_id IN ? AND kpi_evaluations.status = ?", departmentSubtreeIDs(user.DepartmentID), "self_evaluated").
 			Count(&deptSelfEvaluatedCount).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
 			return

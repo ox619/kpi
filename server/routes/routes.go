@@ -32,7 +32,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 		publicRoutes.POST("/login", handlers.Login)
 		publicRoutes.POST("/login-by-dootask-token", handlers.LoginByDooTaskToken)
 		publicRoutes.POST("/refresh", handlers.RefreshToken)
-		publicRoutes.GET("/departments", handlers.GetDepartments) // 注册时需要获取部门列表
+		publicRoutes.GET("/departments", handlers.GetPublicDepartments) // 注册时需要获取部门列表
 	}
 
 	// 系统设置（公开，部分需要HR权限）
@@ -67,6 +67,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 		departmentRoutes := protected.Group("/departments")
 		{
 			departmentRoutes.GET("", handlers.GetDepartments)
+			departmentRoutes.GET("/tree", handlers.GetDepartmentTree)
 			departmentRoutes.POST("", handlers.RoleMiddleware("hr", "manager"), handlers.CreateDepartment)
 			departmentRoutes.GET("/:id", handlers.GetDepartment)
 			departmentRoutes.PUT("/:id", handlers.RoleMiddleware("hr", "manager"), handlers.UpdateDepartment)

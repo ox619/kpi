@@ -283,7 +283,7 @@ func ExportDepartmentToExcel(c *gin.Context) {
 	var evaluations []models.KPIEvaluation
 	result := models.DB.Preload("Employee.Department").Preload("Template").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ?", departmentId).
+		Where("employees.department_id IN ?", departmentSubtreeIDs(uint(departmentId))).
 		Find(&evaluations)
 
 	if result.Error != nil {
