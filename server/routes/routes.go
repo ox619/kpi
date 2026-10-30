@@ -1,8 +1,11 @@
 package routes
 
 import (
-	"dootask-kpi-server/handlers"
+	"log"
 	"net/http"
+
+	"dootask-kpi-server/handlers"
+	"dootask-kpi-server/utils/wecom"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,6 +36,30 @@ func SetupRoutes(r *gin.RouterGroup) {
 		publicRoutes.POST("/login-by-dootask-token", handlers.LoginByDooTaskToken)
 		publicRoutes.POST("/refresh", handlers.RefreshToken)
 		publicRoutes.GET("/departments", handlers.GetPublicDepartments) // 注册时需要获取部门列表
+
+		// 企业微信接入状态（始终注册，未配置时静默返回 enabled=false）
+		publicRoutes.GET("/wecom/status", handlers.WeComStatusHandler)
+
+		// 企业微信 OAuth 免登：仅 WECOM_* 配置完整（Enabled）时注册，否则静默降级
+		if client := wecom.Current(); client != nil {
+			publicRoutes.GET("/wecom/oauth", handlers.WeComOAuthHandler)
+			publicRoutes.GET("/wecom/callback", handlers.WeComCallbackHandler)
+		}
+	}
+
+	// 企业微信通讯录变更回调：仅启用回调配置（CallbackEnabled）时注册，
+	// 企业微信后台「接收消息服务器配置」指向 /api/wecom/callback（GET 验证 URL、POST 接收事件）
+	if client := wecom.Current(); client != nil && client.Config().CallbackEnabled() {
+		cbHandler, err := client.CallbackHandler(func(ev wecom.DirectoryEvent) {
+			// 通讯录变更只用来降低「新人入职到可登录」的延迟，
+			// 成员离职/部门调整以定时全量对账（ListDirectory）为准，此处先留日志。
+			log.Printf("[wecom] 收到通讯录回调事件 type=%s userid=%s", ev.Type, ev.UserID)
+		})
+		if err != nil {
+			log.Printf("[wecom] 注册通讯录回调失败，回调功能降级：%v", err)
+		} else {
+			r.Any("/wecom/callback", gin.WrapH(cbHandler))
+		}
 	}
 
 	// 系统设置（公开，部分需要HR权限）

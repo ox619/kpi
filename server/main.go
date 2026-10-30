@@ -7,6 +7,7 @@ import (
 	"dootask-kpi-server/handlers"
 	"dootask-kpi-server/models"
 	"dootask-kpi-server/routes"
+	"dootask-kpi-server/utils/wecom"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,14 @@ func main() {
 
 	// 创建测试数据
 	models.CreateTestData()
+
+	// 初始化企业微信客户端：未配置 WECOM_* 时静默降级（Current() 为 nil），
+	// 不影响现有内网启动与站内登录；配置不完整时仅告警，不阻塞启动。
+	if _, err := wecom.InitFromEnv(); err != nil {
+		log.Printf("[wecom] 企业微信初始化失败，相关功能降级：%v", err)
+	} else if client := wecom.Current(); client != nil {
+		log.Printf("[wecom] 企业微信接入已启用：%s", client.Config().String())
+	}
 
 	// 设置Gin模式
 	gin.SetMode(gin.ReleaseMode)

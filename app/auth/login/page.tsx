@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import Loading from "@/components/loading"
 import { useDootaskContext } from "@/lib/dootask-context"
 import { useRouter } from "next/navigation"
+import api, { API_BASE_URL } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -19,10 +20,27 @@ export default function LoginPage() {
   const { Alert } = useAppContext()
   const { loading: dooTaskLoading, dooTaskUser } = useDootaskContext()
   const [loading, setLoading] = useState(false)
+  const [wecomEnabled, setWecomEnabled] = useState(false)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   })
+
+  // 探测企业微信接入状态：未配置 WECOM_* 时静默隐藏「企业微信登录」入口
+  useEffect(() => {
+    let cancelled = false
+    api
+      .get("/auth/wecom/status")
+      .then((res: any) => {
+        if (!cancelled) setWecomEnabled(!!res?.enabled)
+      })
+      .catch(() => {
+        // 后端未启用时不展示入口，保持登录页原样
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,6 +127,20 @@ export default function LoginPage() {
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? "登录中..." : "登录"}
                   </Button>
+                  {wecomEnabled && (
+                    <>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        <span>或</span>
+                        <span className="h-px flex-1 bg-border" />
+                      </div>
+                      <a href={`${API_BASE_URL}/auth/wecom/oauth`}>
+                        <Button type="button" variant="outline" className="w-full">
+                          企业微信登录
+                        </Button>
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="mt-4 text-center text-sm">
