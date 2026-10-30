@@ -237,7 +237,7 @@ func UpdateEmployee(c *gin.Context) {
 	// 使用 map 来确保 nil 值能够被正确更新
 	updateMap := map[string]interface{}{
 		"name":          updateData.Name,
-		"email":         updateData.Email,
+		"email":         models.NormalizeEmail(updateData.Email),
 		"position":      updateData.Position,
 		"department_id": updateData.DepartmentID,
 		"manager_id":    managerValue, // 支持 nil 值以清空直属上级

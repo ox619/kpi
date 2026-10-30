@@ -45,7 +45,7 @@ func SystemUserOnboard(c *gin.Context) {
 			return
 		}
 		if req.Email != "" {
-			err = models.DB.Where("email = ?", req.Email).First(&user).Error
+			err = models.DB.Where("email = ?", models.NormalizeEmail(req.Email)).First(&user).Error
 			if err != nil && err != gorm.ErrRecordNotFound {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed", "message": err.Error()})
 				return
@@ -120,7 +120,7 @@ func SystemUserOffboard(c *gin.Context) {
 			return
 		}
 		if req.Email != "" {
-			err = models.DB.Where("email = ?", req.Email).First(&user).Error
+			err = models.DB.Where("email = ?", models.NormalizeEmail(req.Email)).First(&user).Error
 			if err != nil && err != gorm.ErrRecordNotFound {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed", "message": err.Error()})
 				return

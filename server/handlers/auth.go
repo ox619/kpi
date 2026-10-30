@@ -106,7 +106,7 @@ func Register(c *gin.Context) {
 
 	// 检查邮箱是否已存在
 	var existingUser models.Employee
-	if err := models.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+	if err := models.DB.Where("email = ?", models.NormalizeEmail(req.Email)).First(&existingUser).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "邮箱已被注册"})
 		return
 	}
@@ -178,7 +178,7 @@ func Login(c *gin.Context) {
 
 	// 查找用户
 	var user models.Employee
-	if err := models.DB.Preload("Department").Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := models.DB.Preload("Department").Where("email = ?", models.NormalizeEmail(req.Email)).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "邮箱或密码错误"})
 		return
 	}
@@ -233,7 +233,7 @@ func LoginByDooTaskToken(c *gin.Context) {
 
 	// 查找用户
 	var user models.Employee
-	if err := models.DB.Preload("Department").Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := models.DB.Preload("Department").Where("email = ?", models.NormalizeEmail(req.Email)).First(&user).Error; err != nil {
 		// 如果用户不存在
 		user = models.Employee{
 			Name:          dooTaskUser.Nickname,

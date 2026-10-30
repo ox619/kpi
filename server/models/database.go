@@ -48,6 +48,48 @@ func InitDB() {
 	}
 
 	log.Println("数据库表迁移完成")
+
+	// 统一历史数据中的邮箱格式（大小写/空格），避免与平台同步产生重复账号
+	normalizeExistingEmails()
+}
+
+// normalizeExistingEmails 把历史数据的邮箱统一为「去首尾空格 + 小写」。
+// 若存在仅大小写/空格不同、实际重复的邮箱，则跳过本次统一（否则会触发唯一索引冲突），
+// 只打印告警交由人工处理。
+func normalizeExistingEmails() {
+	type duplicateEmail struct {
+		Email string
+		Cnt   int64
+	}
+
+	var duplicates []duplicateEmail
+	err := DB.Raw(`
+		SELECT lower(trim(email)) AS email, count(*) AS cnt
+		FROM employees
+		GROUP BY lower(trim(email))
+		HAVING count(*) > 1
+	`).Scan(&duplicates).Error
+	if err != nil {
+		log.Println("邮箱重复检查失败，跳过邮箱格式统一:", err)
+		return
+	}
+
+	if len(duplicates) > 0 {
+		log.Printf("警告：发现 %d 组大小写/空格不一致的重复邮箱，已跳过邮箱格式统一，请人工处理：", len(duplicates))
+		for _, d := range duplicates {
+			log.Printf("  - %q 出现 %d 次", d.Email, d.Cnt)
+		}
+		return
+	}
+
+	result := DB.Exec(`UPDATE employees SET email = lower(trim(email)) WHERE email <> lower(trim(email))`)
+	if result.Error != nil {
+		log.Println("邮箱格式统一失败:", result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("邮箱格式统一完成，更新 %d 条记录", result.RowsAffected)
+	}
 }
 
 // 创建测试数据

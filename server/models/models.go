@@ -1,13 +1,18 @@
 package models
 
 import (
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // 部门模型
 type Department struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	Name        string    `json:"name" gorm:"not null"`
+	ParentID    uint      `json:"parent_id" gorm:"index"` // 上级部门ID，0 表示顶级部门
+	ExternalID  *string   `json:"-" gorm:"index"`         // 平台侧部门ID（企业微信/DooTask），用于同步时精确映射
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -21,8 +26,9 @@ type Employee struct {
 	ID            uint      `json:"id" gorm:"primaryKey"`
 	Name          string    `json:"name" gorm:"not null"`
 	Email         string    `json:"email" gorm:"unique;not null"`
-	DooTaskUserID *uint     `json:"-"`                 // DooTask用户ID，JSON中不返回
-	Password      string    `json:"-" gorm:"not null"` // 密码，JSON中不返回
+	DooTaskUserID *uint     `json:"-"`                                   // DooTask用户ID，JSON中不返回
+	WeComUserID   *string   `json:"-" gorm:"column:wecom_user_id;index:idx_employees_wecom_user_id"` // 企业微信 UserID，JSON中不返回
+	Password      string    `json:"-" gorm:"not null"`                   // 密码，JSON中不返回
 	Position      string    `json:"position"`
 	DepartmentID  uint      `json:"department_id"`
 	ManagerID     *uint     `json:"manager_id"`                   // 直属上级ID，可以为空
@@ -35,6 +41,21 @@ type Employee struct {
 	Department   Department `json:"department,omitempty" gorm:"foreignKey:DepartmentID"`
 	Manager      *Employee  `json:"manager,omitempty" gorm:"foreignKey:ManagerID"`
 	Subordinates []Employee `json:"subordinates,omitempty" gorm:"foreignKey:ManagerID"`
+}
+
+// NormalizeEmail 统一邮箱格式：去掉首尾空白并转为小写。
+// 邮箱是员工的身份标识之一，若不归一化，大小写不同会被当成两个账号，
+// 企业微信同步与 DooTask 登录都会因此产生重复数据。
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// BeforeSave 在写入前统一邮箱格式。
+// 覆盖 Create/Save 等所有通过模型写入的路径（含后续的企业微信同步）。
+// 注意：以 map 形式调用 Updates 不会走到这里，需在调用处单独归一化。
+func (e *Employee) BeforeSave(tx *gorm.DB) error {
+	e.Email = NormalizeEmail(e.Email)
+	return nil
 }
 
 // KPI模板模型
