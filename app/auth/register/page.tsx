@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +13,7 @@ import { useAppContext } from "@/lib/app-context"
 import { toast } from "sonner"
 import { Loader2, UserX } from "lucide-react"
 import Loading from "@/components/loading"
+import { departmentIndent, flattenDepartmentList } from "@/lib/department-tree"
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -29,6 +30,9 @@ export default function RegisterPage() {
     position: "",
     department_id: 0,
   })
+
+  // 部门选项按层级摊平，便于在下拉框中展示组织架构
+  const departmentOptions = useMemo(() => flattenDepartmentList(departments), [departments])
 
   // 检查是否允许注册
   useEffect(() => {
@@ -56,7 +60,6 @@ export default function RegisterPage() {
     const fetchDepartments = async () => {
       try {
         const response = await authApi.getDepartments()
-        setFormData(prev => ({ ...prev, department_id: response.data[0]?.id || 0 }))
         setDepartments(response.data)
       } catch (error) {
         console.error("获取部门列表失败:", error)
@@ -191,14 +194,14 @@ export default function RegisterPage() {
                         <Loader2 className="w-4 h-4 animate-spin" />
                       </div>
                     ) : (
-                      <Select value={formData.department_id.toString()} onValueChange={handleDepartmentChange}>
+                      <Select value={formData.department_id ? formData.department_id.toString() : undefined} onValueChange={handleDepartmentChange}>
                         <SelectTrigger>
                           <SelectValue placeholder="请选择部门" />
                         </SelectTrigger>
                         <SelectContent>
-                          {departments.map(dept => (
-                            <SelectItem key={dept.id} value={dept.id.toString()}>
-                              {dept.name}
+                          {departmentOptions.map(option => (
+                            <SelectItem key={option.dept.id} value={option.dept.id.toString()}>
+                              {departmentIndent(option.depth) + option.dept.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

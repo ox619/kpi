@@ -102,9 +102,15 @@ api.interceptors.response.use(
 export interface Department {
   id: number
   name: string
+  parent_id: number // 上级部门ID，0 表示顶级部门
   description: string
   created_at: string
+  updated_at?: string
   employees?: { length: number }
+  // 以下字段仅 /departments/tree 返回（扁平列表接口不返回）
+  children?: Department[]
+  employee_count?: number // 直属在职人数
+  total_employee_count?: number // 含所有子部门的人数
 }
 
 export interface Employee {
@@ -378,6 +384,8 @@ export interface AuthUser {
 // 部门API
 export const departmentApi = {
   getAll: (params?: PaginationParams): Promise<PaginatedResponse<Department>> => api.get("/departments", { params }),
+  // 完整部门树（不分页），节点含 children / employee_count / total_employee_count
+  getTree: (): Promise<{ data: Department[]; total: number }> => api.get("/departments/tree"),
   getById: (id: number): Promise<{ data: Department }> => api.get(`/departments/${id}`),
   create: (data: Omit<Department, "id" | "created_at">): Promise<{ data: Department }> =>
     api.post("/departments", data),

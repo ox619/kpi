@@ -10,18 +10,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Edit, Trash2, Users, Search } from "lucide-react"
-import { employeeApi, departmentApi, type Employee, type Department, type PaginatedResponse } from "@/lib/api"
+import { employeeApi, departmentApi, getErrorMessage, type Employee, type PaginatedResponse } from "@/lib/api"
 import { useAppContext } from "@/lib/app-context"
 import { useAuth } from "@/lib/auth-context"
 import { Pagination, usePagination } from "@/components/pagination"
 import { LoadingInline } from "@/components/loading"
+import { departmentIndent, flattenDepartmentTree, type DepartmentOption } from "@/lib/department-tree"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 export default function EmployeesPage() {
   const { Alert, Confirm } = useAppContext()
   const { isHR } = useAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [departments, setDepartments] = useState<Department[]>([])
+  const [departments, setDepartments] = useState<DepartmentOption[]>([])
   const [managers, setManagers] = useState<Employee[]>([])
   const [supervisors, setSupervisors] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,11 +64,11 @@ export default function EmployeesPage() {
     }
   }, [currentPage, pageSize, searchQuery])
 
-  // 获取部门列表
+  // 获取部门列表（树形，按层级缩进展示）
   const fetchDepartments = async () => {
     try {
-      const response = await departmentApi.getAll()
-      setDepartments(response.data || [])
+      const response = await departmentApi.getTree()
+      setDepartments(flattenDepartmentTree(response.data || []))
     } catch (error) {
       console.error("获取部门列表失败:", error)
     }
@@ -157,6 +158,11 @@ export default function EmployeesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      if (!formData.department_id) {
+        await Alert("验证失败", "请选择部门后再提交。")
+        return
+      }
+
       if (formData.role === "employee" && !formData.manager_id) {
         await Alert("验证失败", "普通员工必须选择直属上级，请先选择上级后再提交。")
         return
@@ -196,6 +202,7 @@ export default function EmployeesPage() {
       setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee", is_active: true })
     } catch (error) {
       console.error("保存员工失败:", error)
+      await Alert("保存失败", getErrorMessage(error, "保存员工失败，请检查邮箱是否已被占用"))
     }
   }
 
@@ -208,6 +215,7 @@ export default function EmployeesPage() {
         fetchEmployees()
       } catch (error) {
         console.error("删除员工失败:", error)
+        await Alert("删除失败", getErrorMessage(error, "删除员工失败"))
       }
     }
   }
@@ -315,9 +323,9 @@ export default function EmployeesPage() {
                       <SelectValue placeholder="选择部门" />
                     </SelectTrigger>
                     <SelectContent>
-                      {departments.map(dept => (
-                        <SelectItem key={dept.id} value={dept.id.toString()}>
-                          {dept.name}
+                      {departments.map(option => (
+                        <SelectItem key={option.dept.id} value={option.dept.id.toString()}>
+                          {departmentIndent(option.depth) + option.dept.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -327,14 +335,7 @@ export default function EmployeesPage() {
                   <Label htmlFor="role">角色</Label>
                   <Select
                     value={formData.role}
-                    onValueChange={value =>
-                      setFormData(prev => ({
-                        ...prev,
-                        role: value,
-                        // 只有从非可选角色切换到必选角色时才清空manager_id
-                        manager_id: value === "employee" && !prev.manager_id ? prev.manager_id : prev.manager_id,
-                      }))
-                    }
+                    onValueChange={value => setFormData(prev => ({ ...prev, role: value }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="选择角色" />

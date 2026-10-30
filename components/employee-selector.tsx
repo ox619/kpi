@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandSeparator } from "./ui/command"
 import { CommandInputExpand } from "./ui/command.expand"
 import { employeeApi, departmentApi, Department, PaginationParams } from "@/lib/api"
+import { flattenDepartmentTree } from "@/lib/department-tree"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
 
@@ -403,6 +404,31 @@ export function EmployeeCombobox({
     setDepartments([])
   }, [limitToDepartmentId, limitToManagerId])
 
+  // 部门选项：一次性取部门树，按层级显示完整路径，避免不同上级下的同名部门混淆
+  useEffect(() => {
+    if (!isHR || limitToDepartmentId || limitToManagerId) return
+
+    let cancelled = false
+    departmentApi
+      .getTree()
+      .then(response => {
+        if (cancelled) return
+        setDepartments(
+          flattenDepartmentTree(response.data || []).map(option => ({
+            ...option.dept,
+            name: option.depth > 0 ? option.path : option.dept.name,
+          }))
+        )
+      })
+      .catch(error => {
+        console.error("获取部门树失败:", error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isHR, limitToDepartmentId, limitToManagerId])
+
   const fetchSubordinates = useCallback(async (managerId?: number) => {
     const targetManagerId = managerId || user?.id
     if (!targetManagerId) return
@@ -439,11 +465,7 @@ export function EmployeeCombobox({
         ...(includeInactive ? {} : { is_active: true }),
       }
 
-      const [employeeResponse, departmentResponse] = await Promise.all([
-        employeeApi.getAll(employeeParams),
-        // 限定部门时不需要部门选项
-        !isHR || limitToDepartmentId ? Promise.resolve({ data: [] }) : departmentApi.getAll({ search, pageSize: 100 })
-      ])
+      const employeeResponse = await employeeApi.getAll(employeeParams)
 
       const newEmployees = employeeResponse.data || []
       if (limitToDepartmentId) {
@@ -455,12 +477,6 @@ export function EmployeeCombobox({
           return [...newEmployees, ...prev.filter(employee => !newEmployeeIds.includes(employee.id.toString()))]
         })
       }
-
-      setDepartments(prev => {
-        const newDepartments = departmentResponse.data || []
-        const newDepartmentIds = newDepartments.map(dept => dept.id.toString())
-        return [...newDepartments, ...prev.filter(dept => !newDepartmentIds.includes(dept.id.toString()))]
-      })
     } catch (error) {
       console.error("获取数据失败:", error)
       setEmployees([])
@@ -468,7 +484,7 @@ export function EmployeeCombobox({
     } finally {
       setLoading(false)
     }
-  }, [limitToManagerId, fetchSubordinates, limitToDepartmentId, includeInactive, isHR])
+  }, [limitToManagerId, fetchSubordinates, limitToDepartmentId, includeInactive])
 
   const groups = [
     {
