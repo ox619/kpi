@@ -40,10 +40,12 @@ func SetupRoutes(r *gin.RouterGroup) {
 		// 企业微信接入状态（始终注册，未配置时静默返回 enabled=false）
 		publicRoutes.GET("/wecom/status", handlers.WeComStatusHandler)
 
-		// 企业微信 OAuth 免登：仅 WECOM_* 配置完整（Enabled）时注册，否则静默降级
+		// 企业微信 OAuth 免登：仅 WECOM_* 配置完整（Enabled）时注册，否则静默降级。
+		// 登录回调只做 302，前端 /auth/wecom/callback 用一次性 ticket 换 JWT。
 		if client := wecom.Current(); client != nil {
 			publicRoutes.GET("/wecom/oauth", handlers.WeComOAuthHandler)
 			publicRoutes.GET("/wecom/callback", handlers.WeComCallbackHandler)
+			publicRoutes.POST("/wecom/exchange", handlers.WeComExchangeHandler)
 		}
 	}
 
@@ -89,6 +91,13 @@ func SetupRoutes(r *gin.RouterGroup) {
 	{
 		// 当前用户信息
 		protected.GET("/me", handlers.GetCurrentUser)
+
+		// 企业微信绑定：先登录，再在设置页发起绑定（绑定接口不再要求邮箱密码）
+		protected.GET("/auth/wecom/binding", handlers.WeComBindingStatusHandler)
+		protected.DELETE("/auth/wecom/binding", handlers.WeComUnbindHandler)
+		if wecom.Current() != nil {
+			protected.POST("/auth/wecom/bind/start", handlers.WeComBindStartHandler)
+		}
 
 		// 部门管理（HR和管理员）
 		departmentRoutes := protected.Group("/departments")

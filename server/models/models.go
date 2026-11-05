@@ -23,19 +23,20 @@ type Department struct {
 
 // 员工模型
 type Employee struct {
-	ID            uint      `json:"id" gorm:"primaryKey"`
-	Name          string    `json:"name" gorm:"not null"`
-	Email         string    `json:"email" gorm:"unique;not null"`
-	DooTaskUserID *uint     `json:"-"`                                   // DooTask用户ID，JSON中不返回
-	WeComUserID   *string   `json:"-" gorm:"column:wecom_user_id;index:idx_employees_wecom_user_id"` // 企业微信 UserID，JSON中不返回
-	Password      string    `json:"-" gorm:"not null"`                   // 密码，JSON中不返回
-	Position      string    `json:"position"`
-	DepartmentID  uint      `json:"department_id"`
-	ManagerID     *uint     `json:"manager_id"`                   // 直属上级ID，可以为空
-	Role          string    `json:"role" gorm:"default:employee"` // employee, manager, hr
-	IsActive      bool      `json:"is_active" gorm:"default:true"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID               uint      `json:"id" gorm:"primaryKey"`
+	Name             string    `json:"name" gorm:"not null"`
+	Email            string    `json:"email" gorm:"unique;not null"`
+	DooTaskUserID    *uint     `json:"-"`                                                               // DooTask用户ID，JSON中不返回
+	WeComUserID      *string   `json:"-" gorm:"column:wecom_user_id;index:idx_employees_wecom_user_id"` // 企业微信 UserID，JSON中不返回
+	WeComAuthVersion uint      `json:"-" gorm:"column:wecom_auth_version;not null;default:0"`           // 解绑后递增，使旧授权失效
+	Password         string    `json:"-" gorm:"not null"`                                               // 密码，JSON中不返回
+	Position         string    `json:"position"`
+	DepartmentID     uint      `json:"department_id"`
+	ManagerID        *uint     `json:"manager_id"`                   // 直属上级ID，可以为空
+	Role             string    `json:"role" gorm:"default:employee"` // employee, manager, hr
+	IsActive         bool      `json:"is_active" gorm:"default:true"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 
 	// 关联关系
 	Department   Department `json:"department,omitempty" gorm:"foreignKey:DepartmentID"`
@@ -78,8 +79,8 @@ type KPIItem struct {
 	TemplateID  uint      `json:"template_id"`
 	Name        string    `json:"name" gorm:"not null"`
 	Description string    `json:"description"`
-	MaxScore    float64   `json:"max_score"` // 满分
-	Order       int       `json:"order"`     // 排序
+	MaxScore    float64   `json:"max_score"`                     // 满分
+	Order       int       `json:"order"`                         // 排序
 	ScoredBy    string    `json:"scored_by" gorm:"default:both"` // 评分角色: manager(主管独评，主管分占100%), hr(HR独评，HR分占100%), both(都评，按绩效规则加权)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
