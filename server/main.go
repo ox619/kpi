@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"dootask-kpi-server/handlers"
 	"dootask-kpi-server/models"
@@ -19,6 +20,8 @@ func main() {
 
 	// 创建测试数据
 	models.CreateTestData()
+
+	// JWT_SECRET 在 handlers 包内初始化（环境变量优先，缺失走默认值），此处无需干预。
 
 	// 初始化企业微信客户端：未配置 WECOM_* 时静默降级（Current() 为 nil），
 	// 不影响现有内网启动与站内登录；配置不完整时仅告警，不阻塞启动。
@@ -60,6 +63,11 @@ func main() {
 	handlers.StartSSECleanupTask()
 	handlers.CleanupExportFiles()
 
-	log.Println("KPI系统服务器启动在端口 :8080")
-	log.Fatal(r.Run(":8080"))
+	// 端口由 PORT 环境变量驱动，缺省 8080；监听 0.0.0.0 以支持跨机访问
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("KPI系统服务器启动在端口 :%s", port)
+	log.Fatal(r.Run(":" + port))
 }

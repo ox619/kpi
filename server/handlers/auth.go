@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,8 +16,34 @@ import (
 	"dootask-kpi-server/utils"
 )
 
-// JWT密钥 - 生产环境中应该使用环境变量
-var jwtSecret = []byte("your-secret-key-change-in-production")
+// jwtSecret JWT 签名密钥：优先读 JWT_SECRET 环境变量，
+// 未配置时退回内置默认值。install.sh 会自动生成强随机密钥写入 wecom.env，
+// 因此生产环境不会走到默认值分支；一旦走到，启动日志会打醒目告警。
+var jwtSecret = loadJWTSecret()
+
+const (
+	// jwtSecretEnvName JWT 签名密钥环境变量名。
+	jwtSecretEnvName = "JWT_SECRET"
+	// jwtSecretMinLength 建议的最小密钥长度（256 位随机值的十六进制表示长度）。
+	jwtSecretMinLength = 32
+	// jwtSecretDefault 兜底默认值。可被源码阅读者获知，仅用于保证服务可启动，
+	// 生产环境必须由 JWT_SECRET 覆盖。
+	jwtSecretDefault = "your-secret-key-change-in-production"
+)
+
+// loadJWTSecret 读取 JWT_SECRET，缺失时退回默认值。
+// 整个过程不涉及任何随机数调用，JWT 认证不依赖系统熵源。
+func loadJWTSecret() []byte {
+	if v := strings.TrimSpace(os.Getenv(jwtSecretEnvName)); v != "" {
+		if len(v) < jwtSecretMinLength {
+			log.Printf("[auth] 警告：%s 长度仅 %d，建议使用强随机值（生成方式：openssl rand -hex 32）", jwtSecretEnvName, len(v))
+		}
+		return []byte(v)
+	}
+
+	log.Printf("[auth] 严重警告：未配置 %s，正在使用内置默认密钥；该值随源码公开，任何人可据此伪造登录态与企微绑定 state。请尽快配置 JWT_SECRET。", jwtSecretEnvName)
+	return []byte(jwtSecretDefault)
+}
 
 // JWT Claims结构
 type Claims struct {
