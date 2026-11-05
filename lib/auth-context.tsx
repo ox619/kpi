@@ -11,6 +11,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   login: (data: LoginRequest) => Promise<void>
   register: (data: RegisterRequest) => Promise<void>
+  // 使用一次性 ticket 换取到的 token/用户信息直接建立登录态（企业微信回调）
+  loginWithSession: (token: string, user: AuthUser) => void
   logout: () => void
   refreshUser: () => Promise<void>
 
@@ -94,6 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const loginWithSession = (token: string, user: AuthUser) => {
+    authApi.setAuth(token, user)
+    setUser(user)
+  }
+
   const logout = () => {
     authApi.logout()
     setUser(null)
@@ -120,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user,
     login,
     register,
+    loginWithSession,
     logout,
     refreshUser,
 

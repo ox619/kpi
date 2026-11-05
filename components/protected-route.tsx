@@ -44,8 +44,14 @@ export default function ProtectedRoute({
       return
     }
 
-    // 如果不需要认证且用户已登录，且当前在认证页面，重定向到首页
-    if (!requireAuth && user && pathname.startsWith("/auth")) {
+    // 如果不需要认证且用户已登录，且当前在认证页面，重定向到首页。
+    // 企微回调页例外：它需要用一次性 ticket 建立新的登录态，不能被旧登录态提前赶走。
+    if (
+      !requireAuth &&
+      user &&
+      pathname.startsWith("/auth") &&
+      !pathname.startsWith("/auth/wecom/callback")
+    ) {
       router.push(isHR ? "/" : "/evaluations")
       return
     }
@@ -75,8 +81,13 @@ export default function ProtectedRoute({
     return null
   }
 
-  // 如果不需要认证但用户已登录，且在认证页面，不渲染内容
-  if (!requireAuth && user && pathname.startsWith("/auth")) {
+  // 如果不需要认证但用户已登录，且在认证页面，不渲染内容（企微回调页除外）
+  if (
+    !requireAuth &&
+    user &&
+    pathname.startsWith("/auth") &&
+    !pathname.startsWith("/auth/wecom/callback")
+  ) {
     return null
   }
 

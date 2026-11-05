@@ -4,8 +4,11 @@ import { storage } from "./storage"
 // 获取API基础URL
 // 1. 显式配置优先（Docker/生产环境通过 NEXT_PUBLIC_API_URL 注入）
 // 2. 未配置时按当前访问地址推算——内网其他机器访问时不能用 localhost
-//    （否则请求会打到访问者自己的电脑上）
+//    （否则请求会打到访问者自己的电脑上）；端口由 NEXT_PUBLIC_API_PORT 指定，缺省 8080，
+//    直连后端（不走反向代理）的部署方式靠它切换端口
 // 3. SSR 兜底 localhost
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "8080"
+
 const resolveApiBaseUrl = (): string => {
   const configured = process.env.NEXT_PUBLIC_API_URL
   if (configured) {
@@ -13,9 +16,9 @@ const resolveApiBaseUrl = (): string => {
   }
   if (typeof window !== "undefined" && window.location?.hostname) {
     const protocol = window.location.protocol === "https:" ? "http:" : window.location.protocol
-    return `${protocol}//${window.location.hostname}:8080/api`
+    return `${protocol}//${window.location.hostname}:${API_PORT}/api`
   }
-  return "http://localhost:8080/api"
+  return `http://localhost:${API_PORT}/api`
 }
 
 export const API_BASE_URL = resolveApiBaseUrl()
@@ -593,6 +596,28 @@ export const authApi = {
 
   // 获取部门列表（公开接口，用于注册）
   getDepartments: (): Promise<{ data: Department[] }> => api.get("/auth/departments"),
+
+  // 企业微信登录：用回调一次性 ticket 换取 JWT
+  exchangeWeComLogin: (ticket: string): Promise<LoginResponse> =>
+    api.post("/auth/wecom/exchange", { ticket }),
+
+  // 当前账号的企业微信绑定状态（需要登录）
+  getWeComBinding: (): Promise<{ enabled: boolean; bound: boolean; wecom_user_id?: string }> =>
+    api.get("/auth/wecom/binding"),
+
+  // 发起企业微信绑定（需要登录），返回企微授权链接
+  startWeComBind: (): Promise<{ url: string }> =>
+    // 同源代理负责写入绑定 Cookie，避免跨端口直连时浏览器忽略 Set-Cookie。
+    api.post("/auth/wecom/bind/start", undefined, {
+      baseURL: (process.env.NEXT_PUBLIC_BASE_PATH || "") + "/api",
+    }),
+
+  // 密码确认解绑；同源代理也负责清除绑定 Cookie。
+  unbindWeCom: (password: string): Promise<{ message: string }> =>
+    api.delete("/auth/wecom/binding", {
+      data: { password },
+      baseURL: (process.env.NEXT_PUBLIC_BASE_PATH || "") + "/api",
+    }),
 
   // 登出（清除本地token）
   logout: () => {

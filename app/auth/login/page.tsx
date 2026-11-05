@@ -13,6 +13,7 @@ import Loading from "@/components/loading"
 import { useDootaskContext } from "@/lib/dootask-context"
 import { useRouter } from "next/navigation"
 import api, { API_BASE_URL } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -21,6 +22,10 @@ export default function LoginPage() {
   const { loading: dooTaskLoading, dooTaskUser } = useDootaskContext()
   const [loading, setLoading] = useState(false)
   const [wecomEnabled, setWecomEnabled] = useState(false)
+  const [wecomNotice, setWecomNotice] = useState<{
+    tone: "warning" | "error"
+    text: string
+  } | null>(null)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -31,8 +36,12 @@ export default function LoginPage() {
     let cancelled = false
     api
       .get("/auth/wecom/status")
-      .then((res: any) => {
-        if (!cancelled) setWecomEnabled(!!res?.enabled)
+      .then((res: unknown) => {
+        const enabled =
+          typeof res === "object" && res !== null && "enabled" in res
+            ? Boolean((res as { enabled?: boolean }).enabled)
+            : false
+        if (!cancelled) setWecomEnabled(enabled)
       })
       .catch(() => {
         // 后端未启用时不展示入口，保持登录页原样
@@ -40,6 +49,35 @@ export default function LoginPage() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // 企微回调未绑定 / 禁用 / 失败时会带 wecom 参数回到登录页，这里给出可操作的提示。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const reason = params.get("wecom")
+    if (!reason) return
+
+    if (reason === "unbound") {
+      setWecomNotice({
+        tone: "warning",
+        text: "该企业微信尚未绑定。请先用邮箱密码登录，然后在「系统设置 → 账号绑定」中绑定企业微信。",
+      })
+    } else if (reason === "disabled") {
+      setWecomNotice({
+        tone: "error",
+        text: "该企业微信对应的账号已被禁用，请联系管理员。",
+      })
+    } else {
+      setWecomNotice({
+        tone: "error",
+        text: "企业微信登录失败，请重新发起或联系管理员。",
+      })
+    }
+
+    // 清掉 wecom 参数，避免刷新后重复提示；保留 theme 等其他参数。
+    params.delete("wecom")
+    const query = params.toString()
+    window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : ""))
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,6 +135,18 @@ export default function LoginPage() {
             <CardDescription>请输入您的邮箱和密码进行登录</CardDescription>
           </CardHeader>
           <CardContent>
+            {wecomNotice && (
+              <div
+                className={cn(
+                  "mb-4 rounded-lg border px-3 py-2 text-sm leading-relaxed",
+                  wecomNotice.tone === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                    : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200"
+                )}
+              >
+                {wecomNotice.text}
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="flex flex-col gap-6">
                 <div className="grid gap-3">

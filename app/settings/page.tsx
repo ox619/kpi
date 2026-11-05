@@ -3,18 +3,20 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Circle, CircleCheck } from "lucide-react"
-import { RefreshCw, CheckCircle, LogOut, Monitor, Sun, Moon, Palette, Shield } from "lucide-react"
+import { RefreshCw, CheckCircle, LogOut, Monitor, Sun, Moon, Palette, Shield, Link2, Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
 import { useTheme } from "@/lib/theme-context"
-import { settingsApi } from "@/lib/api"
+import { authApi, getErrorMessage, settingsApi } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-type SettingTab = "appearance" | "system" | "logout"
+type SettingTab = "appearance" | "account" | "system" | "logout"
 
 export default function SettingsPage() {
   const { logout, isHR } = useAuth()
@@ -23,6 +25,16 @@ export default function SettingsPage() {
   const [allowRegistration, setAllowRegistration] = useState(true)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<SettingTab>("appearance")
+  const [binding, setBinding] = useState<{
+    enabled: boolean
+    bound: boolean
+    wecom_user_id?: string
+  } | null>(null)
+  const [bindingStarting, setBindingStarting] = useState(false)
+  const [unbindOpen, setUnbindOpen] = useState(false)
+  const [unbindPassword, setUnbindPassword] = useState("")
+  const [unbinding, setUnbinding] = useState(false)
+  const [unbindError, setUnbindError] = useState("")
 
   // 初始化设置状态
   useEffect(() => {
@@ -42,6 +54,85 @@ export default function SettingsPage() {
     }
     fetchSettings()
   }, [isHR])
+
+  // 读取当前账号的企业微信绑定状态
+  useEffect(() => {
+    let cancelled = false
+    authApi
+      .getWeComBinding()
+      .then((response) => {
+        if (!cancelled) setBinding(response)
+      })
+      .catch((error) => {
+        console.error("获取企业微信绑定状态失败:", error)
+        if (!cancelled) setBinding({ enabled: false, bound: false })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 绑定回调会带 ?wecom=... 回到设置页，这里展示结果并清掉查询参数
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get("wecom")
+    if (!result) return
+
+    if (result === "bound") {
+      toast.success("企业微信绑定成功")
+    } else if (result === "conflict") {
+      toast.error("该企业微信身份已绑定到其他账号，请联系管理员")
+    } else if (result === "browser") {
+      toast.error("绑定校验失败，请使用与回调地址一致的域名，在同一浏览器中重新发起并完成绑定，且允许 Cookie")
+    } else if (result === "disabled") {
+      toast.error("企业微信账号已停用或未激活，无法绑定")
+    } else {
+      toast.error("企业微信绑定失败，请重试或联系管理员")
+    }
+
+    params.delete("wecom")
+    const query = params.toString()
+    window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : ""))
+  }, [])
+
+  // 发起企业微信绑定：后端返回企微授权链接，浏览器直接跳转
+  const handleStartBind = async () => {
+    setBindingStarting(true)
+    try {
+      const response = await authApi.startWeComBind()
+      if (!response?.url) {
+        throw new Error("未获取到企业微信授权地址")
+      }
+      const redirectURI = new URL(response.url).searchParams.get("redirect_uri")
+      if (!redirectURI) throw new Error("企业微信授权地址缺少回调地址，请联系管理员")
+      const callback = new URL(redirectURI)
+      if (callback.origin !== window.location.origin) {
+        throw new Error("当前访问地址与企业微信回调地址不一致，请从 " + callback.origin + (process.env.NEXT_PUBLIC_BASE_PATH || "") + " 进入系统后重新绑定")
+      }
+      window.location.href = response.url
+    } catch (error) {
+      toast.error(getErrorMessage(error, "发起企业微信绑定失败"))
+      setBindingStarting(false)
+    }
+  }
+
+  const handleUnbind = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (unbinding) return
+    setUnbinding(true)
+    setUnbindError("")
+    try {
+      await authApi.unbindWeCom(unbindPassword)
+      setBinding(previous => previous ? { enabled: previous.enabled, bound: false } : previous)
+      setUnbindPassword("")
+      setUnbindOpen(false)
+      toast.success("企业微信已解绑，可使用邮箱密码登录或重新绑定")
+    } catch (error) {
+      setUnbindError(getErrorMessage(error, "解绑失败，请重试"))
+    } finally {
+      setUnbinding(false)
+    }
+  }
 
   // 保存设置
   const handleSaveSettings = async () => {
@@ -78,6 +169,12 @@ export default function SettingsPage() {
       id: "appearance" as SettingTab,
       label: "外观设置",
       icon: <Palette className="w-4 h-4" />,
+      available: true,
+    },
+    {
+      id: "account" as SettingTab,
+      label: "账号绑定",
+      icon: <Link2 className="w-4 h-4" />,
       available: true,
     },
     {
@@ -208,6 +305,88 @@ export default function SettingsPage() {
     </Card>
   )
 
+  // 渲染账号绑定内容
+  const renderAccountContent = () => {
+    const enabled = binding?.enabled ?? false
+    const bound = binding?.bound ?? false
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Link2 className="w-5 h-5 mr-2" />
+            账号绑定
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-col gap-4 p-4 bg-muted/50 rounded-lg sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">企业微信</span>
+                {bound ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
+                    <CheckCircle className="w-3 h-3" />
+                    已绑定
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    未绑定
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                {bound
+                  ? "当前账号已绑定企业微信身份：" + (binding?.wecom_user_id || "—") + "。" +
+                    (enabled ? "绑定后可直接用企业微信登录。" : "企业微信接入当前未启用，仍可解绑。")
+                  : !enabled
+                    ? "企业微信接入未启用，请联系管理员配置 WECOM_* 环境变量。"
+                    : "绑定后可以直接用企业微信登录本系统。绑定过程不需要再次输入密码。"}
+              </p>
+              {bound && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  解绑需要当前 KPI 账号的密码；解绑后可重新绑定其他企业微信身份。
+                </p>
+              )}
+            </div>
+            {bound && (
+              <Button variant="outline" onClick={() => {
+                setUnbindPassword("")
+                setUnbindError("")
+                setUnbindOpen(true)
+              }}>
+                解绑企业微信
+              </Button>
+            )}
+            {enabled && !bound && (
+              <Button onClick={handleStartBind} disabled={bindingStarting || binding === null}>
+                {bindingStarting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Link2 className="w-4 h-4 mr-2" />
+                )}
+                绑定企业微信
+              </Button>
+            )}
+          </div>
+
+          {binding === null && (
+            <p className="text-sm text-muted-foreground">正在读取绑定状态...</p>
+          )}
+
+          <div className="p-4 bg-muted/50 rounded-lg">
+            <h3 className="text-sm font-medium mb-2 text-foreground">说明</h3>
+            <ul className="text-sm space-y-1 text-muted-foreground">
+              <li>• 企业微信登录只对已绑定的账号生效，未绑定时请先用邮箱密码登录。</li>
+              <li>• 一个本地账号只能绑定一个企业微信身份，一个企业微信身份也只能绑定一个账号。</li>
+              <li>• 请使用配置的回调地址进入系统，在同一浏览器中完成绑定，并允许 Cookie。</li>
+              <li>• 解绑需验证当前 KPI 账号密码，不会退出当前登录。</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   // 渲染系统设置内容
   const renderSystemContent = () => (
     <Card>
@@ -258,6 +437,42 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
+      <Dialog open={unbindOpen} onOpenChange={open => {
+        if (unbinding) return
+        setUnbindOpen(open)
+        setUnbindPassword("")
+        setUnbindError("")
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>解绑企业微信</DialogTitle>
+            <DialogDescription>
+              解绑后将无法通过该企业微信登录本账号。请输入当前 KPI 账号的密码，确认您仍可使用邮箱密码登录。若未设置或忘记密码，请联系管理员。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUnbind} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="wecom-unbind-password">当前账号密码</Label>
+              <Input id="wecom-unbind-password" type="password" autoComplete="current-password"
+                value={unbindPassword} onChange={event => setUnbindPassword(event.target.value)}
+                disabled={unbinding} required aria-invalid={!!unbindError}
+                aria-describedby={unbindError ? "wecom-unbind-error" : undefined} />
+              {unbindError && <p id="wecom-unbind-error" role="alert" className="text-sm text-destructive">{unbindError}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={unbinding} onClick={() => {
+                setUnbindOpen(false)
+                setUnbindPassword("")
+                setUnbindError("")
+              }}>取消</Button>
+              <Button type="submit" variant="destructive" disabled={unbinding || !unbindPassword}>
+                {unbinding && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {unbinding ? "正在解绑..." : "确认解绑"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {/* 页面标题 */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">系统设置</h1>
@@ -296,6 +511,7 @@ export default function SettingsPage() {
         {/* 右侧内容区域 */}
         <div className="lg:col-span-3">
           {activeTab === "appearance" && renderAppearanceContent()}
+          {activeTab === "account" && renderAccountContent()}
           {activeTab === "system" && isHR && renderSystemContent()}
           {activeTab === "system" && !isHR && (
             <div className="flex items-center justify-center h-64">
