@@ -207,6 +207,9 @@ export default function RegisterPage() {
                         </SelectContent>
                       </Select>
                     )}
+                    <p className="text-sm text-muted-foreground">
+                      部门暂无主管或 HR 也可注册；创建考核前需由 HR 为您配置直属上级。
+                    </p>
                   </div>
                   <div className="flex flex-col gap-3">
                     <Button type="submit" className="w-full" disabled={loading}>

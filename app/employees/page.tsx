@@ -147,12 +147,7 @@ export default function EmployeesPage() {
     return managers
   }, [formData.role, supervisors, managers, editingEmployee])
 
-  const managerSelectValue = useMemo(() => {
-    if (formData.role === "manager" || formData.role === "hr") {
-      return formData.manager_id || "none"
-    }
-    return formData.manager_id
-  }, [formData.manager_id, formData.role])
+  const managerSelectValue = formData.manager_id || "none"
 
   // 创建或更新员工
   const handleSubmit = async (e: React.FormEvent) => {
@@ -160,11 +155,6 @@ export default function EmployeesPage() {
     try {
       if (!formData.department_id) {
         await Alert("验证失败", "请选择部门后再提交。")
-        return
-      }
-
-      if (formData.role === "employee" && !formData.manager_id) {
-        await Alert("验证失败", "普通员工必须选择直属上级，请先选择上级后再提交。")
         return
       }
 
@@ -348,14 +338,8 @@ export default function EmployeesPage() {
                   </Select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="manager">
-                    直属上级
-                    {formData.role === "employee"
-                      ? "（必选）"
-                      : formData.role === "hr"
-                        ? "（可选，可指定任一员工或无上级）"
-                        : "（可选，可指定任一员工或无上级）"}
-                  </Label>
+                  <Label htmlFor="manager">直属上级（可选，创建考核前需配置）</Label>
+                  <p className="text-sm text-muted-foreground">有进行中考核时不能清空，可指定新上级。</p>
                   <Select
                     value={managerSelectValue}
                     onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
@@ -364,17 +348,13 @@ export default function EmployeesPage() {
                       <SelectValue
                         placeholder={
                           formData.role === "employee"
-                            ? "选择直属上级（必选）"
+                            ? "选择直属上级或暂不配置"
                             : "选择任一员工作为上级或无上级"
                         }
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {(formData.role === "manager" || formData.role === "hr") && (
-                        <SelectItem value="none">
-                          无上级
-                        </SelectItem>
-                      )}
+                      <SelectItem value="none">暂不配置上级</SelectItem>
                       {supervisorOptions.length === 0 && (
                         <SelectItem value="none-disabled" disabled>
                           {formData.role === "employee" ? "暂无可选上级" : "暂无可选员工"}
