@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"dootask-kpi-server/models"
 	"dootask-kpi-server/utils"
@@ -147,10 +149,20 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// 查找上级
+	// 在职主管优先于 HR，同角色按 ID 升序；没有上级也允许注册，考核前由 HR 补齐。
+	var managerID *uint
 	var manager models.Employee
-	if err := models.DB.Where("department_id = ? AND role in ?", req.DepartmentID, []string{"manager", "hr"}).First(&manager).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "部门不存在上级"})
+	err := models.DB.Where("department_id = ? AND role IN ? AND is_active = ?",
+		req.DepartmentID, []string{"manager", "hr"}, true).
+		Order("CASE role WHEN 'manager' THEN 0 ELSE 1 END").Order("id ASC").First(&manager).Error
+	switch {
+	case err == nil:
+		managerID = &manager.ID
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// 保持 NULL，避免用 0 表示尚未配置上级。
+	default:
+		log.Printf("[auth] 注册时查询部门上级失败：%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询部门上级失败，请稍后重试"})
 		return
 	}
 
@@ -168,7 +180,7 @@ func Register(c *gin.Context) {
 		Password:     string(hashedPassword),
 		Position:     req.Position,
 		DepartmentID: req.DepartmentID,
-		ManagerID:    &manager.ID,
+		ManagerID:    managerID,
 		Role:         "employee", // 默认角色为员工
 		IsActive:     true,
 	}
