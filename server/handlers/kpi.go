@@ -379,23 +379,28 @@ func CreateEvaluation(c *gin.Context) {
 		return
 	}
 
+	// 在同一事务中读取上级并创建考核，避免与清空上级并发时使用过期的检查结果。
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建评估失败"})
+		return
+	}
+	defer tx.Rollback()
+
 	// 校验被考核员工必须有直属上级（去掉员工自评环节后，主管评分是流程的第一步）
 	var employee models.Employee
-	if err := models.DB.Preload("Manager").First(&employee, evaluation.EmployeeID).Error; err != nil {
+	if err := tx.Preload("Manager").First(&employee, evaluation.EmployeeID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "被考核员工不存在",
 		})
 		return
 	}
-	if employee.ManagerID == nil {
+	if employee.ManagerID == nil || *employee.ManagerID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("员工「%s」暂无直属上级，无法创建考核。请先在员工管理中为其配置直属上级。", employee.Name),
 		})
 		return
 	}
-
-	// 开始数据库事务
-	tx := models.DB.Begin()
 
 	// 创建评估记录
 	result := tx.Create(&evaluation)
@@ -428,7 +433,10 @@ func CreateEvaluation(c *gin.Context) {
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建评估失败，请重试"})
+		return
+	}
 
 	// 获取完整的评估信息
 	models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores").First(&evaluation, evaluation.ID)

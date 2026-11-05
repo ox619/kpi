@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -130,11 +131,9 @@ func CreateEmployee(c *gin.Context) {
 	if employee.Role == "" {
 		employee.Role = "employee"
 	}
-	if employee.Role == "employee" && (employee.ManagerID == nil || *employee.ManagerID == 0) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "普通员工必须选择直属上级",
-		})
-		return
+	// 允许暂不配置上级；统一用 NULL，考核创建时再校验。
+	if employee.ManagerID != nil && *employee.ManagerID == 0 {
+		employee.ManagerID = nil
 	}
 
 	result := models.DB.Create(&employee)
@@ -200,7 +199,10 @@ func UpdateEmployee(c *gin.Context) {
 		return
 	}
 
-	var updateData models.Employee
+	var updateData struct {
+		models.Employee
+		ManagerID json.RawMessage `json:"manager_id"`
+	}
 	if err := c.ShouldBindJSON(&updateData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "请求参数错误",
@@ -209,29 +211,20 @@ func UpdateEmployee(c *gin.Context) {
 		return
 	}
 
-	targetRole := updateData.Role
-	if targetRole == "" {
-		targetRole = employee.Role
-	}
-	targetManagerID := updateData.ManagerID
-	if targetRole == "employee" && targetManagerID == nil {
-		targetManagerID = employee.ManagerID
-	}
-
-	if targetRole == "employee" && (targetManagerID == nil || *targetManagerID == 0) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "普通员工必须选择直属上级",
-		})
-		return
-	}
-
 	roleValue := updateData.Role
 	if roleValue == "" {
 		roleValue = employee.Role
 	}
-	managerValue := updateData.ManagerID
-	if updateData.Role == "" && updateData.ManagerID == nil {
-		managerValue = employee.ManagerID
+	// 区分未传字段（保留原上级）与显式 null（清空），不依赖是否同时提交角色。
+	managerValue := employee.ManagerID
+	if len(updateData.ManagerID) > 0 {
+		if err := json.Unmarshal(updateData.ManagerID, &managerValue); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "直属上级 ID 无效"})
+			return
+		}
+	}
+	if managerValue != nil && *managerValue == 0 {
+		managerValue = nil
 	}
 
 	// 使用 map 来确保 nil 值能够被正确更新
@@ -240,16 +233,37 @@ func UpdateEmployee(c *gin.Context) {
 		"email":         models.NormalizeEmail(updateData.Email),
 		"position":      updateData.Position,
 		"department_id": updateData.DepartmentID,
-		"manager_id":    managerValue, // 支持 nil 值以清空直属上级
 		"role":          roleValue,
 		"is_active":     updateData.IsActive,
 	}
 
-	result = models.DB.Model(&employee).Updates(updateMap)
+	managerProvided := len(updateData.ManagerID) > 0
+	if managerProvided {
+		updateMap["manager_id"] = managerValue
+	}
+
+	query := models.DB.Model(&employee)
+	clearingManager := managerProvided && managerValue == nil
+	if clearingManager {
+		// 按写入时的数据库状态判断：原本无上级可保存，有上级则仅在无进行中考核时允许清空。
+		// 与资料更新放在同一条 SQL，避免并发新增考核或分配上级导致误清空。
+		query = query.Where(
+			"(COALESCE(manager_id, 0) = 0 OR NOT EXISTS (SELECT 1 FROM kpi_evaluations WHERE employee_id = ? AND COALESCE(status, '') <> ?))",
+			employee.ID, "completed",
+		)
+	}
+	result = query.Updates(updateMap)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "更新员工失败",
 			"message": result.Error.Error(),
+		})
+		return
+	}
+
+	if result.RowsAffected == 0 && clearingManager {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "该员工有进行中的考核，不能清空直属上级；请保留上级、指定新上级或完成考核后再操作",
 		})
 		return
 	}
