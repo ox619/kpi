@@ -99,6 +99,7 @@ paths:
     post:
       operationId: register
       summary: 用户注册
+      description: 部门暂无在职主管或 HR 时也可注册，上级留空；已有在职主管或 HR 时优先关联主管，其次 HR，同角色按 ID 升序选择。创建考核前需补齐直属上级。
       tags: [auth]
       x-doo-cli: false
       requestBody:
@@ -490,6 +491,7 @@ paths:
     post:
       operationId: createEmployee
       summary: 创建员工（HR/管理员）
+      description: 直属上级可暂不配置；创建考核前必须补齐。
       tags: [employees]
       requestBody:
         required: true
@@ -514,6 +516,7 @@ paths:
     put:
       operationId: updateEmployee
       summary: 更新员工（HR/管理员）
+      description: 无直属上级的员工也可保存基本资料；创建考核前必须补齐。有未完成考核时，将已配置的上级清空返回 409；原本无上级时仍可修改资料，可保留或指定新上级。未传 manager_id 时保留原上级，显式 null 表示清空。
       tags: [employees]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -526,6 +529,9 @@ paths:
       responses:
         '200':
           description: 更新成功
+        '409':
+          description: 员工有进行中考核，不能清空直属上级
+
     delete:
       operationId: deleteEmployee
       summary: 删除员工（HR）
