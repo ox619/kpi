@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -32,6 +33,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+wecom.env
+# 脱敏模板必须入库：install.sh 首次安装时用它拷出 /kpi/wecom.env
+!deploy/linux/wecom.env.example
+
+# 后端构建产物（约 30MB，本地打包临时物，不进仓库）
+/server/dootask-kpi-server
+/server/dootask-kpi-server.exe
 
 # vercel
 .vercel
