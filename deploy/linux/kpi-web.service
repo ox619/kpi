@@ -1,0 +1,21 @@
+[Unit]
+Description=KPI 绩效考核 - Web (Next.js standalone)
+After=network.target kpi-api.service
+
+[Service]
+Type=simple
+User=kpi
+Group=kpi
+WorkingDirectory=/web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Environment=TZ=Asia/Shanghai
+ExecStart=/usr/bin/env node /web/server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

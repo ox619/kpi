@@ -1,0 +1,23 @@
+[Unit]
+Description=KPI 绩效考核 - API (Go)
+After=network.target
+
+[Service]
+Type=simple
+User=kpi
+Group=kpi
+# 必须是 /web：数据库、导出目录、备份目录都是相对工作目录或硬编码 /web
+WorkingDirectory=/web
+Environment=PORT=19080
+Environment=SYSTEM_MODE=standalone
+Environment=TZ=Asia/Shanghai
+# 企微配置外置（密钥不进仓库；install.sh 首次安装会从包内拷入）
+EnvironmentFile=-/kpi/wecom.env
+ExecStart=/web/dootask-kpi-server
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
