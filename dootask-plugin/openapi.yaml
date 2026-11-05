@@ -180,6 +180,118 @@ paths:
         '200':
           description: 部门扁平列表（含 parent_id）
 
+  /api/auth/wecom/status:
+    get:
+      operationId: getWeComStatus
+      summary: 企业微信接入状态（公开）
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 是否启用企业微信
+
+  /api/auth/wecom/oauth:
+    get:
+      operationId: startWeComLogin
+      summary: 发起企业微信登录（浏览器跳转）
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '302':
+          description: 跳转到企业微信授权页
+
+  /api/auth/wecom/callback:
+    get:
+      operationId: weComCallback
+      summary: 企业微信 OAuth 回调（浏览器跳转）
+      description: |
+        只做 302 跳转，不输出 HTML。登录成功时跳转到前端回调页并带一次性 ticket；
+        未绑定时跳转到登录页并提示先登录后在设置中绑定。
+      tags: [auth]
+      x-doo-cli: false
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+      responses:
+        '302':
+          description: 跳转到前端页面
+
+  /api/auth/wecom/exchange:
+    post:
+      operationId: exchangeWeComLoginTicket
+      summary: 用一次性 ticket 换取登录态
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket]
+              properties:
+                ticket: { type: string }
+      responses:
+        '200':
+          description: 登录成功，返回 token 与用户信息
+        '400':
+          description: ticket 无效或已过期
+
+  /api/auth/wecom/binding:
+    get:
+      operationId: getWeComBinding
+      summary: 当前账号的企业微信绑定状态
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 绑定状态（enabled / bound / wecom_user_id）
+
+    delete:
+      operationId: unbindWeCom
+      summary: 密码确认解绑当前账号的企业微信
+      description: |
+        需要 JWT 和当前 KPI 账号密码；企业微信接入关闭时仍可使用。
+        清除绑定并撤销待处理的绑定请求和登录 ticket，保留现有登录会话。
+        重复解绑返回成功。
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: 已解绑
+        '400':
+          description: 密码缺失或错误
+        '401':
+          description: 未登录或登录失效
+        '403':
+          description: 账号已禁用
+        '409':
+          description: 账号状态变化或解绑失败
+
+  /api/auth/wecom/bind/start:
+    post:
+      operationId: startWeComBind
+      summary: 登录后发起企业微信绑定
+      description: |
+        需要 JWT。返回企业微信授权链接并设置 HttpOnly Cookie；回调校验签名 state、浏览器 Cookie 和服务端一次性记录，
+        绑定过程不再要求邮箱密码。
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 企业微信授权链接（url）
+        '409':
+          description: 当前账号已绑定企业微信
+
   /api/settings:
     get:
       operationId: getSystemSettings

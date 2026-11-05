@@ -288,6 +288,22 @@ CGO_ENABLED=1 go build -o kpi-server main.go
 - 平板端（768px - 1199px）
 - 移动端（< 768px）
 
+## 🔑 JWT_SECRET 配置与安全降级
+
+后端使用 `JWT_SECRET` 环境变量作为 JWT 签名密钥。源码中保留的默认值仅为「未配置时服务仍可启动」的兜底，且该值随源码公开——一旦代码公开，任何人可离线签发合法 token，并借此伪造企业微信绑定 state，因此**生产环境必须由 `JWT_SECRET` 覆盖**。
+
+### 生产环境要求
+```bash
+export JWT_SECRET=$(openssl rand -hex 32)   # 256-bit random key, hex-encoded
+```
+`deploy/linux/install.sh` 会自动生成并写入 `/kpi/wecom.env`，正常安装流程无需手工处理。
+
+### 加载规则
+优先级：`JWT_SECRET` 环境变量 → 内置默认值。未配置时退回默认值并打印严重告警，服务仍可启动。默认值随源码公开，**生产环境必须确保 `JWT_SECRET` 已配置**，否则任何人可据源码伪造登录态与企业微信绑定 state。
+
+### 运行期不依赖系统熵源
+密钥读取过程不涉及任何随机数调用。因此系统随机数源异常**不会**影响邮箱密码登录、DooTaskToken 登录、企业微信登录与绑定等任何认证功能。
+
 ## 🌓 主题支持
 
 系统支持明暗主题切换，用户可以根据个人喜好选择合适的主题。
