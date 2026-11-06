@@ -89,7 +89,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   response => response.data,
   error => {
-    console.error("API Error:", error)
+    console.error("API Error:", { status: error.response?.status, message: error.message })
 
     // 处理401错误，触发认证状态更新
     if (error.response?.status === 401) {
@@ -445,7 +445,9 @@ export interface EvaluationPaginationParams extends PaginationParams {
 export const employeeApi = {
   getAll: (params?: PaginationParams): Promise<PaginatedResponse<Employee>> => api.get("/employees", { params }),
   getById: (id: number): Promise<{ data: Employee }> => api.get(`/employees/${id}`),
-  create: (data: Omit<Employee, "id" | "created_at">): Promise<{ data: Employee }> => api.post("/employees", data),
+  resetPassword: (id: number, newPassword: string): Promise<{ message: string }> =>
+    api.post("/employees/" + id + "/password", { new_password: newPassword }),
+  create: (data: Omit<Employee, "id" | "created_at"> & { password: string }): Promise<{ data: Employee }> => api.post("/employees", data),
   update: (id: number, data: Partial<Employee>): Promise<{ data: Employee }> => api.put(`/employees/${id}`, data),
   delete: (id: number): Promise<void> => api.delete(`/employees/${id}`),
   getSubordinates: (id: number): Promise<{ data: Employee[]; total: number }> =>
@@ -590,6 +592,9 @@ export const authApi = {
 
   // 获取当前用户信息
   getCurrentUser: (): Promise<{ data: AuthUser }> => api.get("/me"),
+
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ message: string }> =>
+    api.put("/auth/password", { current_password: currentPassword, new_password: newPassword }),
 
   // 刷新token
   refreshToken: (): Promise<{ token: string }> => api.post("/auth/refresh"),

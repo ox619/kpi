@@ -9,7 +9,8 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Edit, Trash2, Users, Search } from "lucide-react"
+import { ResetEmployeePasswordDialog } from "@/components/password-forms"
+import { Plus, Edit, Trash2, Users, Search, KeyRound } from "lucide-react"
 import { employeeApi, departmentApi, getErrorMessage, type Employee, type PaginatedResponse } from "@/lib/api"
 import { useAppContext } from "@/lib/app-context"
 import { useAuth } from "@/lib/auth-context"
@@ -27,6 +28,8 @@ export default function EmployeesPage() {
   const [supervisors, setSupervisors] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [initialPassword, setInitialPassword] = useState("")
+  const [resetEmployee, setResetEmployee] = useState<Employee | null>(null)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [paginationData, setPaginationData] = useState<PaginatedResponse<Employee> | null>(null)
@@ -183,15 +186,16 @@ export default function EmployeesPage() {
       if (editingEmployee) {
         await employeeApi.update(editingEmployee.id, submitData as Partial<Employee>)
       } else {
-        await employeeApi.create(submitData as Omit<Employee, "id" | "created_at">)
+        await employeeApi.create({ ...submitData, password: initialPassword } as Omit<Employee, "id" | "created_at"> & { password: string })
       }
 
       fetchEmployees()
       setDialogOpen(false)
+      setInitialPassword("")
       setEditingEmployee(null)
       setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee", is_active: true })
     } catch (error) {
-      console.error("保存员工失败:", error)
+      console.error("保存员工失败:", getErrorMessage(error, "保存失败"))
       await Alert("保存失败", getErrorMessage(error, "保存员工失败，请检查邮箱是否已被占用"))
     }
   }
@@ -212,6 +216,7 @@ export default function EmployeesPage() {
 
   // 打开编辑对话框
   const handleEdit = (employee: Employee) => {
+    setInitialPassword("")
     setEditingEmployee(employee)
     setFormData({
       name: employee.name,
@@ -227,6 +232,7 @@ export default function EmployeesPage() {
 
   // 打开新增对话框
   const handleAdd = () => {
+    setInitialPassword("")
     setEditingEmployee(null)
     setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee", is_active: true })
     setDialogOpen(true)
@@ -256,13 +262,17 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-6">
+      {resetEmployee && <ResetEmployeePasswordDialog key={resetEmployee.id} employee={resetEmployee} onClose={() => setResetEmployee(null)} />}
       {/* 响应式头部 */}
       <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">员工管理</h1>
           <p className="text-muted-foreground mt-1 sm:mt-2">管理员工信息和组织架构</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={open => {
+          setDialogOpen(open)
+          if (!open) setInitialPassword("")
+        }}>
           <DialogTrigger asChild>
             <Button onClick={handleAdd} className="w-full sm:w-auto lg:mt-8">
               <Plus className="w-4 h-4 mr-2" />
@@ -294,6 +304,17 @@ export default function EmployeesPage() {
                     required
                   />
                 </div>
+                {!editingEmployee && (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="initial-password">初始登录密码</Label>
+                    <Input id="initial-password" type="password" autoComplete="new-password"
+                      value={initialPassword} onChange={event => setInitialPassword(event.target.value)}
+                      required minLength={6} />
+                    <p className="text-sm text-muted-foreground">
+                      至少 6 个字符，创建后请将初始密码告知员工。员工可在设置中修改密码。
+                    </p>
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="position">职位</Label>
                   <Input
@@ -475,6 +496,12 @@ export default function EmployeesPage() {
                       <Button variant="outline" size="sm" onClick={() => handleEdit(employee)}>
                         <Edit className="w-4 h-4" />
                       </Button>
+                      {isHR && (
+                        <Button variant="outline" size="sm" onClick={() => setResetEmployee(employee)}>
+                          <KeyRound className="w-4 h-4 mr-1" />
+                          重置密码
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" onClick={() => handleDelete(employee.id)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>

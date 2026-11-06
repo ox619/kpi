@@ -171,7 +171,7 @@ func TestRegisterKeepsDepartmentAndRegistrationChecks(t *testing.T) {
 func TestEmployeeWithoutManagerCanSaveAndMustConfigureBeforeEvaluation(t *testing.T) {
 	department := setupOptionalManagerDB(t)
 	body := map[string]interface{}{
-		"name": "Employee", "email": "employee@example.com", "department_id": department.ID,
+		"name": "Employee", "email": "employee@example.com", "password": "test-password", "department_id": department.ID,
 		"role": "employee", "is_active": true, "manager_id": 0,
 	}
 	r := callOptionalManagerHandler(t, CreateEmployee, http.MethodPost, body, 0)

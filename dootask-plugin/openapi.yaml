@@ -181,6 +181,38 @@ paths:
         '200':
           description: 部门扁平列表（含 parent_id）
 
+  /api/auth/password:
+    put:
+      operationId: changePassword
+      summary: 修改当前账号密码
+      description: 需要 JWT 和当前 KPI 密码。新密码沿用 bcrypt 保存方式；未设置本地密码时需先联系 HR 重置。
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password, writeOnly: true }
+                new_password:
+                  type: string
+                  format: password
+                  writeOnly: true
+                  minLength: 6
+                  description: 至少 6 个字符，UTF-8 编码不超过 72 字节
+      responses:
+        '200':
+          description: 密码修改成功
+        '400':
+          description: 密码格式无效、当前密码错误或尚未设置本地密码
+        '401':
+          description: 未登录或账号已停用
+        '409':
+          description: 账号或密码已发生变化，请重试
+
   /api/auth/wecom/status:
     get:
       operationId: getWeComStatus
@@ -491,17 +523,19 @@ paths:
     post:
       operationId: createEmployee
       summary: 创建员工（HR/管理员）
-      description: 直属上级可暂不配置；创建考核前必须补齐。
+      description: 必须设置初始登录密码，至少 6 个字符且 UTF-8 编码不超过 72 字节，沿用 bcrypt 保存且不返回明文。直属上级可暂不配置；创建考核前必须补齐。
       tags: [employees]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmployeeInput'
+              $ref: '#/components/schemas/EmployeeCreateInput'
       responses:
         '201':
           description: 创建成功
+        '400':
+          description: 初始密码缺失或格式无效
 
   /api/employees/{id}:
     get:
@@ -541,6 +575,43 @@ paths:
       responses:
         '200':
           description: 删除成功
+
+  /api/employees/{id}/password:
+    post:
+      operationId: resetEmployeePassword
+      summary: HR 重置员工密码
+      description: 需要 JWT，并验证操作者在数据库中的当前在职 HR 身份。可为尚未设置本地密码的旧账号设置密码，不修改角色或启停状态。
+      tags: [employees]
+      x-doo-cli: false
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                  format: password
+                  writeOnly: true
+                  minLength: 6
+                  description: 至少 6 个字符，UTF-8 编码不超过 72 字节
+      responses:
+        '200':
+          description: 密码已重置
+        '400':
+          description: 员工 ID 或密码格式无效
+        '401':
+          description: 未登录或操作者已停用
+        '403':
+          description: 操作者不是在职 HR
+        '404':
+          description: 员工不存在
+        '409':
+          description: 账号或密码已发生变化，请重试
 
   /api/employees/{id}/subordinates:
     get:
@@ -1368,6 +1439,19 @@ components:
         parent_id:
           type: integer
           description: 上级部门 ID；0 表示顶级部门。不能设置为自身或自身子部门。
+
+    EmployeeCreateInput:
+      allOf:
+        - $ref: '#/components/schemas/EmployeeInput'
+        - type: object
+          required: [password]
+          properties:
+            password:
+              type: string
+              format: password
+              writeOnly: true
+              minLength: 6
+              description: 初始登录密码；至少 6 个字符，UTF-8 编码不超过 72 字节
 
     EmployeeInput:
       type: object

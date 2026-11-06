@@ -91,6 +91,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 	{
 		// 当前用户信息
 		protected.GET("/me", handlers.GetCurrentUser)
+		protected.PUT("/auth/password", handlers.ChangePassword)
 
 		// 企业微信绑定：先登录，再在设置页发起绑定（绑定接口不再要求邮箱密码）
 		protected.GET("/auth/wecom/binding", handlers.WeComBindingStatusHandler)
@@ -119,6 +120,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 			employeeRoutes.PUT("/:id", handlers.RoleMiddleware("hr", "manager"), handlers.UpdateEmployee)
 			employeeRoutes.DELETE("/:id", handlers.RoleMiddleware("hr"), handlers.DeleteEmployee)
 			employeeRoutes.GET("/:id/subordinates", handlers.GetEmployeeSubordinates)
+			employeeRoutes.POST("/:id/password", handlers.ResetEmployeePassword) // 处理器按数据库当前角色限制为 HR
 		}
 
 		// KPI模板管理（HR和管理员）

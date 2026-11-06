@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChangePasswordCard } from "@/components/password-forms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -16,7 +17,7 @@ import { authApi, getErrorMessage, settingsApi } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-type SettingTab = "appearance" | "account" | "system" | "logout"
+type SettingTab = "appearance" | "account" | "password" | "system" | "logout"
 
 export default function SettingsPage() {
   const { logout, isHR } = useAuth()
@@ -175,6 +176,12 @@ export default function SettingsPage() {
       id: "account" as SettingTab,
       label: "账号绑定",
       icon: <Link2 className="w-4 h-4" />,
+      available: true,
+    },
+    {
+      id: "password" as SettingTab,
+      label: "修改密码",
+      icon: <Shield className="w-4 h-4" />,
       available: true,
     },
     {
@@ -512,6 +519,7 @@ export default function SettingsPage() {
         <div className="lg:col-span-3">
           {activeTab === "appearance" && renderAppearanceContent()}
           {activeTab === "account" && renderAccountContent()}
+          {activeTab === "password" && <ChangePasswordCard />}
           {activeTab === "system" && isHR && renderSystemContent()}
           {activeTab === "system" && !isHR && (
             <div className="flex items-center justify-center h-64">

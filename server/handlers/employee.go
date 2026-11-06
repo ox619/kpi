@@ -8,6 +8,7 @@ import (
 	"dootask-kpi-server/models"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // 获取所有员工
@@ -118,15 +119,30 @@ func GetEmployees(c *gin.Context) {
 
 // 创建员工
 func CreateEmployee(c *gin.Context) {
-	var employee models.Employee
+	var req struct {
+		models.Employee
+		InitialPassword string `json:"password" binding:"required"`
+	}
 
-	if err := c.ShouldBindJSON(&employee); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "请求参数错误",
 			"message": err.Error(),
 		})
 		return
 	}
+
+	if !validateAccountPassword(req.InitialPassword) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "初始密码至少 6 个字符且不超过 72 字节"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.InitialPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码处理失败，请重试"})
+		return
+	}
+	employee := req.Employee
+	employee.Password = string(hash)
 
 	if employee.Role == "" {
 		employee.Role = "employee"
