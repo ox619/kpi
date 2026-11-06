@@ -112,9 +112,10 @@ func Notify(userID string, m Message) error {
 // ---------------------------------------------------------------------------
 
 // 企业微信 textcard 消息的字段长度上限（字节，不是字符）。
+// 对外导出，便于调用方在拼装正文时预留空间，避免追加的尾注被截掉。
 const (
-	maxCardTitleBytes = 128
-	maxCardBodyBytes  = 512
+	MaxCardTitleBytes = 128
+	MaxCardBodyBytes  = 512
 )
 
 // Message 一条应用消息。URL 非空时发 textcard（可点击跳转），
@@ -142,16 +143,16 @@ func (c *Client) Notify(userID string, m Message) error {
 	recipient := &workwx.Recipient{UserIDs: []string{userID}}
 
 	if m.URL == "" {
-		body := truncateBytes(m.Body, maxCardBodyBytes)
+		body := truncateBytes(m.Body, MaxCardBodyBytes)
 
 		return c.app.SendTextMessage(recipient, body, false)
 	}
 
-	title := truncateBytes(m.Title, maxCardTitleBytes)
+	title := truncateBytes(m.Title, MaxCardTitleBytes)
 	if title == "" {
 		title = "绩效考核"
 	}
-	body := truncateBytes(m.Body, maxCardBodyBytes)
+	body := truncateBytes(m.Body, MaxCardBodyBytes)
 	buttonText := m.ButtonText
 	if buttonText == "" {
 		buttonText = "查看详情"

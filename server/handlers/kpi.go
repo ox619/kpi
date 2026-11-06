@@ -441,10 +441,11 @@ func CreateEvaluation(c *gin.Context) {
 	// 获取完整的评估信息
 	models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores").First(&evaluation, evaluation.ID)
 
+	periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+
 	// 发送 DooTask 机器人通知：创建考核 -> 上级待评估（已去掉员工自评环节）
 	if employee.Manager != nil && employee.Manager.DooTaskUserID != nil {
 		dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
-		periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
 
 		appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
 
@@ -458,6 +459,14 @@ func CreateEvaluation(c *gin.Context) {
 
 		_ = dooTaskClient.SendBotMessage(employee.Manager.DooTaskUserID, message)
 	}
+
+	// 发送企业微信推送：下一步由直属上级评分
+	wecomPushEvaluation(c,
+		employee.Manager,
+		"绩效考核待评估",
+		fmt.Sprintf("员工：%s\n模板：%s\n周期：%s", evaluation.Employee.Name, evaluation.Template.Name, periodValue),
+		evaluation.ID,
+	)
 
 	// 发送实时通知
 	operatorID := c.GetUint("user_id")
@@ -707,6 +716,14 @@ func UpdateEvaluation(c *gin.Context) {
 				_ = dooTaskClient.SendBotMessage(evaluation.Employee.Manager.DooTaskUserID, message)
 			}
 
+			// 企业微信推送：下一步由直属上级评分
+			wecomPushEvaluation(c,
+				evaluation.Employee.Manager,
+				"绩效考核待评估",
+				fmt.Sprintf("员工：%s\n模板：%s\n周期：%s", evaluation.Employee.Name, evaluation.Template.Name, periodValue),
+				evaluation.ID,
+			)
+
 		case "manager_evaluated":
 			// 完成主管评分：如仍处于待HR审核阶段，则通知HR
 			// （当启用了绩效规则且自动推进到 pending_confirm 时，这里不会进入）
@@ -730,6 +747,13 @@ func UpdateEvaluation(c *gin.Context) {
 				_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
 			}
 
+			// 企业微信推送：下一步由 HR 审核
+			wecomPushEvaluationToHRs(c,
+				"绩效考核待审核",
+				fmt.Sprintf("员工：%s\n模板：%s\n周期：%s", evaluation.Employee.Name, evaluation.Template.Name, periodValue),
+				evaluation.ID,
+			)
+
 		case "pending_confirm":
 			// 完成审核（HR人工或规则自动）：通知员工确认
 			if evaluation.Employee.DooTaskUserID != nil {
@@ -744,6 +768,14 @@ func UpdateEvaluation(c *gin.Context) {
 				)
 				_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
 			}
+
+			// 企业微信推送：下一步由被考核员工确认
+			wecomPushEvaluation(c,
+				&evaluation.Employee,
+				"绩效考核待确认",
+				fmt.Sprintf("模板：%s\n周期：%s\n总分：%.1f", evaluation.Template.Name, periodValue, evaluation.TotalScore),
+				evaluation.ID,
+			)
 
 		case "completed":
 			// 员工确认完成：通知 HR
@@ -767,6 +799,13 @@ func UpdateEvaluation(c *gin.Context) {
 
 				_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
 			}
+
+			// 企业微信推送：与 DooTask 一致，完成时通知 HR
+			wecomPushEvaluationToHRs(c,
+				"绩效考核已完成",
+				fmt.Sprintf("员工：%s\n模板：%s\n周期：%s\n总分：%.1f", evaluation.Employee.Name, evaluation.Template.Name, periodValue, evaluation.TotalScore),
+				evaluation.ID,
+			)
 		}
 	}
 
@@ -1318,6 +1357,12 @@ func SubmitObjection(c *gin.Context) {
 		_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
 	}
 
+	// 企业微信推送：异议需 HR 与直属上级共同处理
+	objectionBody := fmt.Sprintf("员工：%s\n模板：%s\n周期：%s\n异议原因：%s",
+		evaluation.Employee.Name, evaluation.Template.Name, periodValue, objectionData.Reason)
+	wecomPushEvaluation(c, evaluation.Employee.Manager, "绩效异议待处理", objectionBody, evaluation.ID)
+	wecomPushEvaluationToHRs(c, "绩效异议待处理", objectionBody, evaluation.ID)
+
 	// 发送通知给上级和HR
 	notificationService := GetNotificationService()
 
@@ -1416,6 +1461,15 @@ func HandleObjection(c *gin.Context) {
 		_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
 	}
 
+	// 企业微信推送：下一步由员工重新确认
+	wecomPushEvaluation(c,
+		&evaluation.Employee,
+		"绩效异议已处理",
+		fmt.Sprintf("模板：%s\n周期：%s\n调整后总分：%.2f\n处理说明：%s",
+			evaluation.Template.Name, periodValue, handleData.TotalScore, handleData.FinalComment),
+		evaluation.ID,
+	)
+
 	// 通知主管（如果有）
 	var employee models.Employee
 	if err := models.DB.Preload("Manager").First(&employee, evaluation.EmployeeID).Error; err == nil {
@@ -1430,6 +1484,15 @@ func HandleObjection(c *gin.Context) {
 			)
 			_ = dooTaskClient.SendBotMessage(employee.Manager.DooTaskUserID, message)
 		}
+
+		// 企业微信推送：主管知情
+		wecomPushEvaluation(c,
+			employee.Manager,
+			"绩效异议已处理",
+			fmt.Sprintf("员工：%s\n模板：%s\n周期：%s\n调整后总分：%.2f",
+				employee.Name, evaluation.Template.Name, periodValue, handleData.TotalScore),
+			evaluation.ID,
+		)
 	}
 
 	// 发送通知给员工
